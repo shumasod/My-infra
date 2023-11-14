@@ -1,0 +1,103 @@
+#!/bin/bash
+set -e
+export PATH=$PATH:/usr/local/bin/
+#==========================================================================
+# *** 本番DBをテーブル毎にdumpするスクリプト ***
+#==========================================================================
+
+#==========================================================================
+# グローバル変数
+#==========================================================================
+
+# --- SERVER ---
+
+# 現在のカレントディレクトリ
+DIR="$(cd $(dirname $0); pwd)"
+# mysqlのdumpを管理するディレクトリ
+DUMP_DIR="${DIR}/../data"
+# mysqlのテーブルダンプファイルを格納するディレクトリ
+TEBLE_DUMP_DIR="${DUMP_DIR}/dump_tables"
+# 圧縮ファイル名
+RDIFF_DIR="${DUMP_DIR}/rdiff"
+# ダンプの日付
+TODAY=$(date "+%Y%m%d")
+# S3バケット
+S3_BUCKET=-dumps
+# 非同期スレッド
+BACKUP_THREAD=8
+
+# --- DB ---
+DB_HOST=""
+DB_USER=""
+DB_PASS=""
+# DB名
+DB_NAME=""
+# mysqlのダンプコマンド
+DUMP_MYSQL="mydumper -h $DB_HOST -u $DB_USER -p $DB_PASS -B $DB_NAME -t $BACKUP_THREAD -o $TEBLE_DUMP_DIR -v 3 -k -c"
+
+
+#==========================================================================
+# Helpers
+#==========================================================================
+dump_tables() {
+    echo "[INFO] 全テーブルダンプ開始"
+
+    # 前回のファイルは不要なので削除
+    rm -f ${TEBLE_DUMP_DIR}/*
+
+    ${DUMP_MYSQL}
+
+}
+
+# 差分を作る
+make_diff() {
+    echo "[INFO] ${TEBLE_DUMP_DIR} ダイレクトリーの差分を取る"
+    if [ ! -d "${RDIFF_DIR}_${TODAY}" ]; then
+        echo "[INFO] 昨日の差分削除"
+        rm -rf ${RDIFF_DIR}_*
+        if [[ $(aws s3 ls s3://$S3_BUCKET/$TODAY | head) ]]; then
+            echo "[INFO] S3から取り戻す"
+            aws s3 cp s3://$S3_BUCKET/$TODAY ${RDIFF_DIR}_${TODAY} --recursive --only-show-errors;
+        fi
+    fi
+    # ダンプ場所に移動
+    cd $DUMP_DIR
+    echo "[INFO] rdiff-backup processing"
+    rdiff-backup --no-acls --no-file-statistics $TEBLE_DUMP_DIR "${RDIFF_DIR}_${TODAY}"
+    # 一時フォルダーは消しておく
+    echo "[INFO] Delete dump directory"
+    rm -r $TEBLE_DUMP_DIR
+}
+
+# S3にアップロード
+upload_s3() {
+    echo "[INFO] ${RDIFF_DIR}_${TODAY} フォルダをS3に移動"
+    # ダンプ場所に移動
+    cd $DUMP_DIR
+    # ファイルが大きいので、分割アップロードを行う
+    aws s3 sync "${RDIFF_DIR}_${TODAY}" s3://$S3_BUCKET/$TODAY/ --delete --only-show-errors
+}
+
+#==========================================================================
+# Main START
+#==========================================================================
+main() {
+    echo "[INFO] バックアップ処理開始-$(date "+%Y_%m_%d_%H_%M_%S")"
+
+    # DO: テーブルダンプ
+    dump_tables
+    if [ $? -ne 0 ]; then
+        echo "[ERROR]  テーブルのダンプに失敗しました"
+        return 1
+    fi
+
+    # 差分取り
+    make_diff
+
+    # ファイルをアップロード
+    upload_s3
+
+    echo "[INFO] バックアップ処理終了-$(date "+%Y_%m_%d_%H_%M_%S")"
+}
+
+main

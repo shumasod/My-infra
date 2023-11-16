@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+export PATH=$PATH:/usr/local/bin/
+S3_BUCKET=-dumps
+LASTMONTH=$(date --date="last month" +"%Y%m")
+
+main() {
+        echo "[INFO] 一時フォルダー作成..."
+        tmp_dir=$(mktemp -d -t dbMonthlyBackup-$(date +%Y-%m-%d-%H-%M-%S)-XXXXXXXXXX)
+        trap 'rm -rf -- "$tmp_dir"' EXIT
+        echo "[INFO] S3から${LASTMONTH}バックアップ分取得..."
+        aws s3 sync s3://$S3_BUCKET/ $tmp_dir/$LASTMONTH --exclude "*" --include "${LASTMONTH}*.tar" --exclude "**/*" --only-show-errors
+        echo "[INFO] データ圧縮..."
+        tar -cf "${tmp_dir}/${LASTMONTH}.tar" -C $tmp_dir $LASTMONTH
+        echo "[INFO] S3へ再アップロード..."
+        aws s3 cp "${tmp_dir}/${LASTMONTH}.tar" s3://$S3_BUCKET/monthly/ --only-show-errors
+        echo "[INFO] S3不要データ削除..."
+        aws s3 rm s3://$S3_BUCKET/ --exclude "*" --include "${LASTMONTH}*.tar" --recursive --only-show-errors
+}
+
+main

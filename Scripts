@@ -9,3 +9,17 @@ url_encode() {
         -e 's/%2D/-/g' \
         -e 's/%2E/./g'
 }
+
+## 最初のデータの受け取りだけ引数を使った例
+url_encode() { # 引数で文字列が渡されると仮定
+  local input="$*"
+  echo "$input" |
+    nkf -W8MQ |
+    sed 's/=$//' |
+    tr '=' '%' |
+    paste -s -d '\0' - |
+    sed -e 's/%7E/~/g' \
+        -e 's/%5F/_/g' \
+        -e 's/%2D/-/g' \
+        -e 's/%2E/./g'
+}

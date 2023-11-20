@@ -23,3 +23,34 @@ url_encode() { # 引数で文字列が渡されると仮定
         -e 's/%2D/-/g' \
         -e 's/%2E/./g'
 }
+##デバック
+
+#!/bin/bash
+ 
+set -x
+ 
+TODAY=`date +%Y%m%d`
+ 
+echo $TODAY
+ 
+touch test.txt
+ 
+rm -f test.txt
+ 
+cat test.txt
+
+
+##引数
+#!/bin/bash
+ 
+set -x
+ 
+TODAY=`date +%Y%m%d`
+ 
+echo $TODAY
+ 
+touch $1
+ 
+rm -f $1
+ 
+cat $1 

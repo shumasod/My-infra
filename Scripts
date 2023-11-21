@@ -54,3 +54,15 @@ touch $1
 rm -f $1
  
 cat $1 
+
+#slack通知
+
+watch_slack_channel() {
+  slackcat --channel team:general --stream --plain |
+    while read -r post
+    do
+      # postには1つ1つの発言が格納されている。
+    done
+}
+watch_slack_channel &
+

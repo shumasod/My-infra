@@ -66,3 +66,17 @@ watch_slack_channel() {
 }
 watch_slack_channel &
 
+##scriptコマンドでログを自動取得する
+script /<保存先>/<ログファイル名>.log
+
+##操作ログ取得
+
+if [ "$SHLVL" = "2" ] && [ ! -z "$PS1" ] ; then
+    [ -d /var/log/history ] || mkdir /var/log/history
+    script -af /var/log/history/`whoami`.log
+fi
+
+
+
+
+

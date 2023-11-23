@@ -76,6 +76,22 @@ if [ "$SHLVL" = "2" ] && [ ! -z "$PS1" ] ; then
     script -af /var/log/history/`whoami`.log
 fi
 
+# if句
+if [ $USER = 'sig' ]
+then
+echo 'Hi.'
+
+# 上の『ifの条件句』に当てはまらなかった場合、elif句に処理が移る（記法はifと同じ）
+elif [ $USER = 'guest' ]
+then
+echo 'Welcome.'
+
+# 『すべてのif・elifの条件句』に当てはまらなかった場合、else句に処理が移る（then不要）
+else
+echo 'Who are you?'
+
+fi
+
 
 
 

@@ -92,6 +92,36 @@ echo 'Who are you?'
 
 fi
 
+##Linuxのオペレーションログを自動で取得
+#!/bin/bash
+
+#
+# this script require package "colorize-log".
+# So do next command: "sudo apt install colorized-log" if you not installed this package.
+# And place this file in "/etc/profile.d/".
+#
+
+function formatLogFile() {
+	target=${logdir}/$1
+	if [ ! -d ${formatdir} ];then
+		mkdir ${formatdir}
+	fi
+	cat ${target} | ansi2txt | iconv | col -b >> ${formatdir}/formated_${filename}
+}
+
+
+if [ ! -d ~/log ];then
+		mkdir ~/log
+fi
+if [ ! -d ~/log/formated ];then
+		mkdir ~/log/formated
+fi
+filename="`date +%Y%m%d_%H-%M-%S`_operation.log"
+logdir="${HOME}/log"
+formatdir=${HOME}/log/formated
+touch ${logdir}/${filename}
+script ${logdir}/${filename} && formatLogFile ${filename} && exit
+
 
 
 

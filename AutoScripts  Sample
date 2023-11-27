@@ -1,0 +1,43 @@
+#System.Windows.Formsなどのインポート
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# Windows APIの宣言
+$signature=@'
+[DllImport("user32.dll",CharSet=CharSet.Auto,CallingConvention=CallingConvention.StdCall)]
+public static extern void mouse_event(long dwFlags, long dx, long dy, long cButtons, long dwExtraInfo);
+'@
+$SendMouseClick = Add-Type -memberDefinition $signature -name "Win32MouseEventNew" -namespace Win32Functions -passThru
+
+
+# Windowsキー（Ctrl+Escキー）押下
+[System.Windows.Forms.SendKeys]::SendWait("^{ESC}")
+Start-Sleep -m 100
+
+# 検索窓に「paint」と入力
+[System.Windows.Forms.SendKeys]::SendWait("paint")
+Start-Sleep -m 100
+
+# Enterボタン押下
+[System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+
+# ペイントが起動するまで待機（待機時間は適宜調整）
+Start-Sleep -m 1000
+
+# マウスを描き始めの場所まで移動（座標値は適宜調整、以下同様）
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(200, 200)
+Start-Sleep -m 100
+
+# 各頂点へマウスをドラッグして四角を描く
+$SendMouseClick::mouse_event(0x00000002, 0, 0, 0, 0)
+Start-Sleep -m 100
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(200, 600)
+Start-Sleep -m 100
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(800, 600)
+Start-Sleep -m 100
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(800, 200)
+Start-Sleep -m 100
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(200, 200)
+Start-Sleep -m 100
+$SendMouseClick::mouse_event(0x00000004, 0, 0, 0, 0)
+

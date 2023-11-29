@@ -9,7 +9,7 @@ REM ===========================================================
 
 REM 変数========================================================
 REM コンピュータ情報
-set PCName="ComputerName001"
+set PCName="LAPTOP-b8er1aav"
 
 REM ネットワーク情報
 set IPAddress="xxx.xxx.xxx.xxx"

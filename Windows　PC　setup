@@ -9,7 +9,7 @@ REM ===========================================================
 
 REM 変数========================================================
 REM コンピュータ情報
-set PCName="LAPTOP-b8er1aav"
+set PCName="LAPTOP"
 
 REM ネットワーク情報
 set IPAddress="xxx.xxx.xxx.xxx"
@@ -17,7 +17,7 @@ set SubnetMask="xxx.xxx.xxx.xxx"
 set DefaultGateway="xxx.xxx.xxx.xxx"
 
 REM DNS情報
-set DNS1="xxx.xxx.xxx.xxx"
+set DNS1="8.8.×.×"
 set DNS2="xxx.xxx.xxx.xxx"
 
 REM === Windowsライセンスユーザ情報 ===

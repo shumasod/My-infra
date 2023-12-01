@@ -1,4 +1,6 @@
 ##WLAN接続状況の確認
 netsh wlan show interface
+##既知のネットワーク一覧表示
+netsh wlan show interface
 
 

@@ -8,4 +8,6 @@ netsh wlan show profiles name="SSID" key=clear
 netsh wlan connect name="SSID"
 ##切断する。
 netsh wlan disconnect
+##接続順序を変更する
+netsh wlan set profileorder name="SSID" priority=1
 

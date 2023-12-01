@@ -6,5 +6,6 @@ netsh wlan show interface
 netsh wlan show profiles name="SSID" key=clear
 ##接続する。
 netsh wlan connect name="SSID"
-
+##切断する。
+netsh wlan disconnect
 

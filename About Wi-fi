@@ -2,5 +2,9 @@
 netsh wlan show interface
 ##既知のネットワーク一覧表示
 netsh wlan show interface
+##既知のネットワーク詳細をパスワード含めて表示する
+netsh wlan show profiles name="SSID" key=clear
+##接続する。
+netsh wlan connect name="SSID"
 
 

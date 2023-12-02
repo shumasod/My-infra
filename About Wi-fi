@@ -10,4 +10,8 @@ netsh wlan connect name="SSID"
 netsh wlan disconnect
 ##接続順序を変更する
 netsh wlan set profileorder name="SSID" priority=1
+##現在接続しているプロファイルを、現在のフォルダに出力。
+netsh wlan export profile
+##SSIDとフォルダを指定して出力。
+netsh wlan export profile name="SSID" folder="C:\tmp"
 

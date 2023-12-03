@@ -135,6 +135,14 @@ $Y = [System.Windows.Forms.Cursor]::Position.Y
 Write-Output "X: $X | Y: $Y"
 Read-Host
 
+# マウスカーソル移動
+[System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(x, y)
+
+# クリックイベント生成
+$SendMouseClick::mouse_event(0x0002, 0, 0, 0, 0);
+$SendMouseClick::mouse_event(0x0004, 0, 0, 0, 0);
+
+
 
 
 

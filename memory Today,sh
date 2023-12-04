@@ -1,0 +1,18 @@
+#!/bin/bash -eu
+
+cd -- "${0%/*}"
+script_dir="$(pwd)"
+
+memo_dir="${HOME}/memo" # input your memo directory
+mkdir -p "${memo_dir}"
+today="$(date +%Y-%m-%d)"
+file="${memo_dir}/${today}.md"
+if [ ! -f "${file}" ]; then
+  template="${script_dir}/template"
+  if [ -f "${template}" ]; then
+    cat "${template}" > "${file}"
+  else
+    touch "${file}"
+  fi
+fi
+code "${memo_dir}" "${file}"

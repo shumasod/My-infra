@@ -5,13 +5,7 @@
 
 This script is used to get useful information from a computer.
 
-Function: Get-ComputerDetails
-Author: Joe Bialek, Twitter: @JosephBialek
-Required Dependencies: None
-Optional Dependencies: None
-Version: 1.1
 
-.DESCRIPTION
 
 This script is used to get useful information from a computer. Currently, the script gets the following information:
 -Explicit Credential Logons (Event ID 4648)

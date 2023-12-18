@@ -41,20 +41,7 @@ rm -f test.txt
 cat test.txt
 
 
-##引数
-#!/bin/bash
- 
-set -x
- 
-TODAY=`date +%Y%m%d`
- 
-echo $TODAY
- 
-touch $1
- 
-rm -f $1
- 
-cat $1 
+
 
 #slack通知
 

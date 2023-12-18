@@ -11,6 +11,7 @@ url_encode() {
 }
 
 ## 最初のデータの受け取りだけ引数を使った例
+!/bin/sh
 url_encode() { # 引数で文字列が渡されると仮定
   local input="$*"
   echo "$input" |

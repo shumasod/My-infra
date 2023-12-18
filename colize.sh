@@ -101,7 +101,7 @@ $NF ~ /TCP(.*)MISS/ {
 
 # LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
 
-# ↓
+
 
 # LogFormat "%h %D %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" combined
 

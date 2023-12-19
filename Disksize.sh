@@ -1,7 +1,9 @@
-const Submarine=require('Submarine');
+##サーバのディスクサイズ取得
+
+const Submarine=require('Ubuntu23.04');
 
 
-const GetVolSize=class extends Submarine {
+const GetVolSize=class extends Ubuntu23.04{
   query(){
     return {
       volkb_sizes: String.raw`

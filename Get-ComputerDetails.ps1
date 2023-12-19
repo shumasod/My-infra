@@ -30,12 +30,7 @@ Gets information about the computer and outputs it as raw text.
 This script is useful for fingerprinting a server to see who connects to this server (from where), and where users on this server connect to. 
 You can also use it to find Powershell scripts and executables which are typically run, and then use this to backdoor those files.
 
-.LINK
 
-Blog: http://clymb3r.wordpress.com/
-Github repo: https://github.com/clymb3r/PowerShell
-
-#>
 
     Param(
         [Parameter(Position=0)]
@@ -438,23 +433,7 @@ Required Dependencies: None
 Optional Dependencies: None
 Version: 1.1
 
-.DESCRIPTION
 
-Go through the PowerShell operational log to find scripts that run (by looking for ExecutionPipeline logs eventID 4100 in PowerShell app log).
-You can then backdoor these scripts or do other malicious things.
-
-.EXAMPLE
-
-Find-PSScriptsInPSAppLog
-Find unique PowerShell scripts being executed from the PowerShell operational log.
-
-.NOTES
-
-.LINK
-
-Blog: http://clymb3r.wordpress.com/
-Github repo: https://github.com/clymb3r/PowerShell
-#>
     $ReturnInfo = @{}
     $Logs = Get-WinEvent -LogName "Microsoft-Windows-PowerShell/Operational" -ErrorAction SilentlyContinue | Where {$_.Id -eq 4100}
 

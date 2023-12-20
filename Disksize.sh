@@ -1,9 +1,9 @@
 ##サーバのディスクサイズ取得
 
-const Submarine=require('Ubuntu23.04');
+const Submarine=require('submarine');
 
 
-const GetVolSize=class extends Ubuntu23.04{
+const GetVolSize=class extends submarine{
   query(){
     return {
       volkb_sizes: String.raw`

@@ -16,3 +16,40 @@ if [ ! -f "${file}" ]; then
   fi
 fi
 code "${memo_dir}" "${file}"
+
+
+
+###Powershell
+
+# スクリプトのディレクトリを取得
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+
+# メモのディレクトリを設定
+$memoDir = Join-Path $env:USERPROFILE "memo"
+
+# ディレクトリが存在しない場合は作成
+if (-not (Test-Path $memoDir)) {
+    New-Item -ItemType Directory -Path $memoDir | Out-Null
+}
+
+# 今日の日付を取得
+$today = Get-Date -Format "yyyy-MM-dd"
+
+# ファイルパスを設定
+$file = Join-Path $memoDir "$today.md"
+
+# ファイルが存在しない場合
+if (-not (Test-Path $file)) {
+    $template = Join-Path $scriptDir "template"
+
+    # テンプレートファイルが存在する場合
+    if (Test-Path $template) {
+        Get-Content $template | Set-Content $file
+    } else {
+        New-Item -ItemType File -Path $file | Out-Null
+    }
+}
+
+# メモディレクトリとファイルを開く
+Start-Process "explorer.exe" $memoDir
+Start-Process "code.exe" $file

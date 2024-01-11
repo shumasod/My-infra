@@ -1,0 +1,9 @@
+###ログの配下確認
+
+$ which httpd
+
+###/opt/bitnami/apache2配下のファイルの確認
+
+$ls/opt/bitnami/apache2
+
+$ ls /opt/bitnami/apache2/logs/

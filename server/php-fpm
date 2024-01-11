@@ -1,0 +1,36 @@
+###　Lightsailのphp-fpmのメモリを確認する時
+
+#使用可能なメモリの確認
+
+free -h
+
+
+### PHPプロセスが確保している平均メモリ量の把握
+
+ps -ylC php-fpm --sort:rss　　//rssにて表示する
+
+###平均を求める（以下のコマンドbitnamiのパッケージで求めることができるか確認する。）
+# ps --no-headers -o "rss,cmd" -C php-fpm | awk '{ sum+=$1 } END { printf ("%d%s\n", sum/NR/1024,"M") }'
+
+###etc以下のディレクトリ配下でphp-fpmのコンフィグファイルを探す。
+
+（例）
+
+pm.max_children = 使用可能メモリ量 / プロセスの平均メモリ使用量
+pm.start_servers = [25% of max_children]
+pm.min_spare_servers = [25% of max_children]
+pm.max_spare_servers = [75% of max_children]
+
+pm.max_children = (* 1024) / M = 
+pm.start_servers =  ×  =  = 
+pm.min_spare_servers =  ×  =  =
+pm.max_spare_servers = ×  =  = 
+
+# vi /etc/php-fpm.d/www.conf
+----------------------------------------
+[www]
+pm.max_children = 
+pm.start_servers = 
+pm.min_spare_servers = 
+pm.max_spare_servers = 
+----------------------------------------

@@ -14,7 +14,7 @@ ps -ylC php-fpm --sort:rss　　//rssにて表示する
 
 ###etc以下のディレクトリ配下でphp-fpmのコンフィグファイルを探す。
 
-（例）
+（推奨）
 
 pm.max_children = 使用可能メモリ量 / プロセスの平均メモリ使用量
 pm.start_servers = [25% of max_children]

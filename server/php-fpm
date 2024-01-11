@@ -36,6 +36,13 @@ pm.max_spare_servers =
 ----------------------------------------
 
 
+<php-fpm.conf>
+[global]
+pid = /var/run/php-fpm.pid
+error_log = /var/log/php-fpm.log
+include=/usr/local/etc/php-fpm.d/*.conf
+
+
 ####dynamic
 起動数を動的に変更する方法。
 通常時はある程度の数プロセスを起動しておきます。同時接続数が増え、プロセス数が足りなくなった時だけ、設定した範囲でプロセスが追加で起動されます

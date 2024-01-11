@@ -7,3 +7,6 @@ $ which httpd
 $ls/opt/bitnami/apache2
 
 $ ls /opt/bitnami/apache2/logs/
+
+###.gzのログ解凍
+$ gzip -d *.gz

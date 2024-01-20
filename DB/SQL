@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# MySQLのユーザー名とパスワードを設定
+MYSQL_USER="your_mysql_user"
+MYSQL_PASSWORD="your_mysql_password"
+
+# MySQLのデータディレクトリを設定
+MYSQL_DATA_DIR="/var/lib/mysql"
+
+# MySQLのログファイルを設定
+MYSQL_ERROR_LOG="/var/log/mysql/error.log"
+
+# エラーログを監視してクラッシュを検出
+tail -n0 -F $MYSQL_ERROR_LOG | while read line
+do
+    if echo "$line" | grep -q "mysqld got signal"; then
+        echo "MySQLがクラッシュしました。復旧を試みます..."
+
+        # MySQLを停止
+        systemctl stop mysql
+
+        # データディレクトリの検証と修復
+        mysqlcheck -u$MYSQL_USER -p$MYSQL_PASSWORD --all-databases --auto-repair --optimize
+
+        # MySQLを再起動
+        systemctl start mysql
+
+        echo "MySQLの復旧が完了しました。"
+    fi
+done
+
+
+tail -n0 -F $MYSQL_ERROR_LOG | while read line
+
+if echo "$line" | grep -q "mysqld got signal"
+
+mysqlcheck -u$MYSQL_USER -p$MYSQL_PASSWORD --all-databases --auto-repair --optimize

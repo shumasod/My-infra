@@ -1,3 +1,15 @@
+@echo off
+
+rem スクリプトファイルのパス
+set scriptPath="C:\Users\<ユーザー名>\Documents\WindowsPowerShell\Scripts\csv2txt.ps1"
+
+rem 引数を取得
+set args=%*
+
+rem スクリプトファイルを実行
+powershell -NoLogo -File "%scriptPath%" %args%
+
+
 //csvデータ出力例
 
 # 出力する CSV ファイルの名前を指定します。(この時のcsvファイルはエクスプローラーから指定する）

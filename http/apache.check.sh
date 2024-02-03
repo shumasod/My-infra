@@ -4,7 +4,7 @@
 access_log="/var/log/apache2/access.log"
 
 # 通知先のメールアドレス
-mail_to="example@example.com"
+mail_to="test@test.com"
 
 # 通知するコード
 error_codes="300,400,500"
@@ -24,6 +24,6 @@ while true; do
       echo "【エラー通知】" | mail -s "Apache 内のエラーが発生しました。" $mail_to
     fi
   done
-  # 1 秒待つ
-  sleep 1
+  # 5 秒待つ
+  sleep 5
 done

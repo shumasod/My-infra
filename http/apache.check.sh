@@ -4,7 +4,7 @@
 access_log="/var/log/apache2/access.log"
 
 # 通知先のメールアドレス
-mail_to="test@test.com"
+mail_to=
 
 # 通知するコード
 error_codes="300,400,500"

@@ -7,8 +7,8 @@ function show_kamonegi() {
   echo "**********************************"
 
   echo "  具材："
-  echo "    - うどん"
-  echo "    - 鴨肉"
+  echo "    - うどんは200g"
+  echo "    - 鴨肉は25g"
   echo "    - 九条ネギ"
   echo "    - だし汁"
 

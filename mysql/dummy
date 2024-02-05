@@ -5,7 +5,7 @@ USE customer_database;
 -- 顧客テーブル
 CREATE TABLE IF NOT EXISTS customers (
     customer_id INT AUTO_INCREMENT PRIMARY KEY,
-    first_name VARCHAR(50) NOT NULL,
+    first_name VARCHAR(10) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
     phone_number VARCHAR(20),
@@ -27,7 +27,7 @@ BEGIN
         VALUES (
             CONCAT('FirstName', i),
             CONCAT('LastName', i),
-            CONCAT('customer', i, '@example.com'),
+            CONCAT('customer', i, '@example.com,yahho.com'),
             CONCAT('+1-555-555-', LPAD(i, 4, '0')),
             CONCAT('Address', i),
             CONCAT('City', i),
@@ -40,5 +40,5 @@ BEGIN
 END //
 DELIMITER ;
 
--- ダミーデータの挿入（1万人分）
-CALL InsertDummyCustomers(10000);
+-- ダミーデータの挿入（10万人分）
+CALL InsertDummyCustomers(100000);

@@ -1,4 +1,5 @@
 @echo off
+
 REM ===========================================================
 REM 制作日：202402/28
 REM 製作者：Shuma
@@ -9,12 +10,13 @@ REM ===========================================================
 
 REM 変数========================================================
 REM コンピュータ情報
-set PCName="LAPTOP"
+set PCName=""
 
 REM ネットワーク情報
 set IPAddress="xxx.xxx.xxx.xxx"
 set SubnetMask="xxx.xxx.xxx.xxx"
 set DefaultGateway="xxx.xxx.xxx.xxx"
+
 
 REM DNS情報
 set DNS1="8.8.8.8

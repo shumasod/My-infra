@@ -13,6 +13,13 @@ $SoftwareInstallers = @(
 )
 $UserSettingsFile = "C:\path\to\usersettings.ini"
 $TPMProvisioning = $true # TPMプロビジョニングを有効にするかどうか
+$TaskbarSettings = @{
+    Alignment = "Left"
+    ShowSearch = $false
+    ShowCortana = $false
+    ShowTaskView = $false
+    ShowWidgets = $false
+}
 
 # コンピュータ名を変更
 Rename-Computer -NewName $ComputerName
@@ -38,6 +45,9 @@ foreach ($Installer in $SoftwareInstallers) {
 if (Test-Path $UserSettingsFile) {
     Copy-Item $UserSettingsFile -Destination "C:\Users\Default\AppData\Roaming"
 }
+
+# タスクバーの設定
+Set- taskbar $TaskbarSettings
 
 # 再起動
 Restart-Computer

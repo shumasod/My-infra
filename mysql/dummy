@@ -37,7 +37,7 @@ BEGIN
         );
         SET i = i + 1;
     END WHILE;
-END //
+
 DELIMITER ;
 
 -- ダミーデータの挿入（10万人分）

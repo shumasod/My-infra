@@ -1,7 +1,7 @@
 @echo off
 
 REM ===========================================================
-REM 制作日：202402/28
+REM 制作日：2024
 REM 製作者：Shuma
 REM バージョン：1.1β
 REM Windowsキッティング用スクリプト
@@ -10,16 +10,15 @@ REM ===========================================================
 
 REM 変数========================================================
 REM コンピュータ情報
-set PCName=""
+set PCName="MyComputer"
 
 REM ネットワーク情報
-set IPAddress="xxx.xxx.xxx.xxx"
-set SubnetMask="xxx.xxx.xxx.xxx"
-set DefaultGateway="xxx.xxx.xxx.xxx"
-
+set IPAddress="192.168.1.100"
+set SubnetMask="255.255.255.0"
+set DefaultGateway="192.168.1.1"
 
 REM DNS情報
-set DNS1="8.8.8.8
+set DNS1="8.8.8.8"
 set DNS2="8.8.4.4"
 
 REM === Windowsライセンスユーザ情報 ===
@@ -64,8 +63,8 @@ getmac >> %Log%
 getmac /v /fo list  >> %Log%
 
 REM Windowsライセンスユーザの登録
-reg add %RegPath% /v RegisterdOrganization /t REG_SZ /d %RegOrga% /f
-reg add %RegPath% /v RegisterdOwner /t REG_SZ /d %RegOwnr% /f
+reg add %RegPath% /v RegisteredOrganization /t REG_SZ /d %RegOrga% /f
+reg add %RegPath% /v RegisteredOwner /t REG_SZ /d %RegOwnr% /f
 
 REM 終了日時情報の取得(タイムスタンプ)
 REM 日付情報の取得
@@ -82,6 +81,4 @@ echo %year%.%month%.%day% >> %Log%
 echo %hr%:%min%:%sec%  >> %Log%
 
 REM 再起動処理
-shutdown /r /t 3
-
-exit
+shutdown /r /t 0

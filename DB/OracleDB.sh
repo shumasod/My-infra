@@ -2,9 +2,9 @@
 CREATE DATABASE my_database
 USER SYS IDENTIFIED BY sys_password
 USER SYSTEM IDENTIFIED BY system_password
-LOGFILE GROUP 1 ('/path/to/logfile/redo_log1.log') SIZE 100M,
-        GROUP 2 ('/path/to/logfile/redo_log2.log') SIZE 100M,
-        GROUP 3 ('/path/to/logfile/redo_log3.log') SIZE 100M
+LOGFILE GROUP 1 ('/path/to/logfile/redo_log1.log') SIZE 1000M,
+        GROUP 2 ('/path/to/logfile/redo_log2.log') SIZE 1000M,
+        GROUP 3 ('/path/to/logfile/redo_log3.log') SIZE 1000M
 MAXLOGFILES 5
 MAXLOGMEMBERS 5
 MAXLOGHISTORY 100

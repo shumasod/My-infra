@@ -1,0 +1,10 @@
+FROM ubuntu:latest
+
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y expect
+
+# スクリプトファイルをコピー
+COPY test.sh /root/test.sh
+
+# スクリプトを実行するコマンドを追加
+CMD /root/test.sh

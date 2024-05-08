@@ -39,3 +39,16 @@ WORKDIR /workspace/lib
 RUN adduser --disabled-password --gecos '' --uid 1000 ec2-user
 
 USER ec2-user
+
+@echo off
+
+echo Building Docker image...
+
+docker build -t my-python-image .
+
+if %ERRORLEVEL% neq 0 (
+    echo Error building Docker image.
+    exit /b %ERRORLEVEL%
+)
+
+echo Docker image built successfully.

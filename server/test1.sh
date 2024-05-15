@@ -1,5 +1,3 @@
-//Linux自動入力
-
 #!/bin/bash
 # test.sh
 

@@ -1,0 +1,11 @@
+export_dataset = BigQueryExecuteQueryOperator(
+    task_id='export_dataset',
+    sql='''
+        EXPORT DATA OPTIONS(
+            uri='gs://your-bucket/export/*.csv',
+            format='CSV',
+            fieldDelimiter=','
+        ) AS
+        SELECT * FROM `your-project.your_dataset.your_table`
+    ''',
+)

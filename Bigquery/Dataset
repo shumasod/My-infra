@@ -1,0 +1,15 @@
+from google.cloud import bigquery
+
+# BigQueryClientを初期化
+client = bigquery.Client()
+
+# データセットを作成 (プロジェクトIDを指定)
+dataset_id = "{your-project-id}.your_dataset"
+
+# データセット作成オプションを設定
+dataset = bigquery.Dataset(dataset_id)
+dataset.location = "asia-northeast1" # ロケーションを指定
+
+# データセットを作成
+dataset = client.create_dataset(dataset, timeout=30)
+print(f"Dataset {dataset.dataset_id} created")

@@ -1,0 +1,23 @@
+# テーブル定義を作成
+table_id = f"{dataset_id}.your_table"
+schema = [
+    bigquery.SchemaField("name", "STRING"),
+    bigquery.SchemaField("age", "INTEGER"),
+]
+table = bigquery.Table(table_id, schema=schema)
+
+# テーブルを作成
+table = client.create_table(table)
+print(f"Created table {table_id}")
+
+# CSVデータをロード
+job_config = bigquery.LoadJobConfig(
+    source_format=bigquery.SourceFormat.CSV, skip_leading_rows=1, autodetect=True,
+)
+with open("data.csv", "rb") as source_file:
+    job = client.load_table_from_file(source_file, table_id, job_config=job_config)
+
+# ジョブ完了を待機
+job.result()  # API request
+
+print(f"Loaded {job.output_rows} rows into {table_id}")

@@ -1,0 +1,12 @@
+# クエリを実行
+query = """
+    SELECT name, age 
+    FROM `{project_id}.your_dataset.your_table`
+    WHERE age > 30
+"""
+query_job = client.query(query)
+
+# 結果を取得
+results = query_job.result()
+for row in results:
+    print(row)

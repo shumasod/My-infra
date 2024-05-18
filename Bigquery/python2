@@ -1,0 +1,11 @@
+load_data = BigQueryExecuteQueryOperator(
+    task_id='load_data',
+    sql=f'''
+        LOAD DATA
+        OVERWRITE
+        INTO `new_project.new_dataset.new_table`
+        FROM FILES('{new_org_bucket}/export/*.csv')
+        FORMAT CSV
+        FIELD_DELIMITER ','
+    ''',
+)

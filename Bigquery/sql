@@ -1,0 +1,5 @@
+CREATE TABLE `new_project.new_dataset.new_table`(
+    column1 DATA_TYPE,
+    column2 DATA_TYPE,
+    ...
+)

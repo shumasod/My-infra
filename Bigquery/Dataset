@@ -10,6 +10,6 @@ dataset_id = "{your-project-id}.your_dataset"
 dataset = bigquery.Dataset(dataset_id)
 dataset.location = "asia-northeast1" # ロケーションを指定
 
-# データセットを作成
+# データセットを作成だい
 dataset = client.create_dataset(dataset, timeout=30)
 print(f"Dataset {dataset.dataset_id} created")

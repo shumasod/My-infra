@@ -1,0 +1,23 @@
+# 色の定義
+$Red = @{ForegroundColor = "Red"}
+$Green = @{ForegroundColor = "Green"}
+$Blue = @{ForegroundColor = "Blue"}
+$Purple = @{ForegroundColor = "Magenta"}
+$Cyan = @{ForegroundColor = "Cyan"}
+$Brown = @{ForegroundColor = "DarkYellow"}
+$Reset = @{ForegroundColor = "White"}
+
+# やくざの顔
+Write-Host @Brown "`n            _._._ `n           /     \ `n          | () () | `n           \  ^  / `n            ||||| `n            ||||| `n" @Reset
+
+# やくざの体
+Write-Host @Purple "`n            /     \ `n           /       \ `n          /         \ `n         /           \ `n        /             \ `n       /               \ `n      /                 \ `n     /                   \ `n    /                     \ `n   /                       \ `n  /                         \ `n /                           \ `n/                             \ `n------------------------------`n" @Reset
+
+# やくざの腕
+Write-Host @Blue "`n           /\ `n          /  \ `n         /    \ `n        /      \ `n       /        \ `n      /          \ `n     /            \ `n    /              \ `n   /                \ `n  /                  \ `n /                    \ `n/                      \ `n" @Reset
+
+# やくざの足
+Write-Host @Green "`n           /  \ `n          /    \ `n         /      \ `n        /        \ `n       /          \ `n      /            \ `n     /              \ `n    /                \ `n   /                  \ `n  /                    \ `n /                      \ `n/                        \ `n" @Reset
+
+# やくざの構え
+Write-Host @Red "`n           \\// `n            \\// `n             \// `n             //// `n            //\\ `n           //  \\ `n" @Reset

@@ -15,6 +15,7 @@ Resources:
       LoadBalancerArn: !Ref ALB
       TargetGroupName: my-target-group
       Port: 80
+      Protocol: HTTP
       HealthCheckProtocol: HTTP
       HealthCheckPort: 80
       HealthCheckPath: /
@@ -26,6 +27,6 @@ Resources:
     Properties:
       LoadBalancerArn: !Ref ALB
       Port: 80
-      DefaultAction:
-        Type: Forward
-        Target
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MyTargetGroup

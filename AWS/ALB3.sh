@@ -1,9 +1,11 @@
-def revert_to_original_handler(event, context):
+import boto3
+
+def lambda_handler(event, context):
     elbv2 = boto3.client('elbv2')
     
     # 元のターゲットグループARNを設定
     original_target_groups = {
-        'arn:aws:elasticloadbalancing:
+        'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:listener/app/my-loadbalancer/1234567890abcdef/0123456789abcdef': 'arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/my-original-target-group/1234567890abcdef'
     }
     
     for listener_arn, target_group_arn in original_target_groups.items():
@@ -23,7 +25,7 @@ def revert_to_original_handler(event, context):
                     {
                         'Field': 'path-pattern',
                         'PathPatternConfig': {
-                            'Values': ['*']
+                            'Values': ['/*']
                         }
                     }
                 ],
@@ -40,6 +42,3 @@ def revert_to_original_handler(event, context):
         except Exception as e:
             print(f"Error modifying rules for listener {listener_arn}: {e}")
             raise e
-
-# テストイベント
-revert_to_original_handler({}, {})

@@ -1,7 +1,7 @@
 from google.cloud import bigquery
 
 # プロジェクトIDを指定
-project_id = "your-project-id"
+project_id = 
 
 # BigQueryClientを初期化
 client = bigquery.Client(project=project_id)

@@ -39,3 +39,27 @@ CREATE TABLE resorts (
   rating DECIMAL(2, 1),
   FOREIGN KEY (island_id) REFERENCES islands(id)
 );
+
+
+-- Create a table to hold the ASCII art
+CREATE TABLE hawaiian_art (
+    id SERIAL PRIMARY KEY,
+    art TEXT
+);
+
+-- Insert a simple Hawaiian-themed ASCII art
+INSERT INTO hawaiian_art (art) VALUES
+('
+    _  _   _  _  _   _   _  _  _   _  _  _  
+  (_) (_) (_)(_) (_)(_) (_)(_)(_) (_) (_)(_) 
+  (_)  (_)   (_)   (_) (_)   (_)    (_)  (_) 
+  (_)  (_)   (_)   (_) (_)   (_)    (_)  (_) 
+  (_)  (_)   (_)   (_) (_)   (_)    (_)  (_) 
+  (_)  (_)   (_)   (_) (_)   (_)    (_)  (_) 
+  (_) (_)   (_) (_)  (_)   (_)    (_)  (_) 
+     (_)   (_)   (_)   (_) (_)  (_)   (_) (_) 
+');
+
+-- Display the art
+SELECT art FROM hawaiian_art;
+

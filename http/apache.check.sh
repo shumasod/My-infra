@@ -24,6 +24,6 @@ while true; do
       echo "【エラー通知】" | mail -s "Apache 内のエラーが発生しました。" $mail_to
     fi
   done
-  # 5 秒待つ
-  sleep 5
+  # 3 秒待つ
+  sleep 3
 done

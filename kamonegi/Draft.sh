@@ -7,7 +7,7 @@ function show_kamonegi() {
   echo "    　 /　　　●　　　　 \\"
   echo "   ／　　　　　　　　　　　 ＼"
   echo "　／　　　　　　　　　　　　 ＼"
-  echo "　｜ 　　　 ●　　●　　　 　.w
+  echo "　｜ 　　　 ●　　●　　　 　｜"
   echo "　｜　　　　　　　　　　　　 ｜"
   echo "　｜　　　　　　　　　　　　 ｜"
   echo "　｜　　　　　∩　∩　　　　 ｜"

@@ -1,10 +1,9 @@
 #!/bin/bash
 
-# 使用方法: ./rss_collector.sh <RSS_URL> <キーワード> <出力ファイル>
+# 使用方法: ./rss_collector.sh <RSS_URL> <キーワード>
 
 RSS_URL="$1"
 KEYWORD="$2"
-OUTPUT_FILE="$3"
 
 # 依存関係の確認
 check_dependencies() {
@@ -42,8 +41,7 @@ format_output() {
 # メイン処理
 main() {
     check_dependencies
-    fetch_and_parse_rss | filter_items | format_output > "$OUTPUT_FILE"
-    echo "結果が $OUTPUT_FILE に保存されました。"
+    fetch_and_parse_rss | filter_items | format_output
 }
 
 # スクリプトの実行

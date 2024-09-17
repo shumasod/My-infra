@@ -1,35 +1,44 @@
 # CSV ファイルのパス
 $csvPath = "C:\temp\test.csv"
-
 # テキストファイルのパス
 $txtPath = "C:\temp\test.txt"
 
-# CSV ファイルを読み込む
-$csvData = Import-Csv $csvPath
-
 # ヘッダー行を含めるかどうかのフラグ
 $includeHeader = $true
-
-# 改行コードを指定する
-$newLineChar = "`r`n" # Windows の改行コード
+# 改行コードを指定する（デフォルトは環境に応じた改行コード）
+$newLineChar = [Environment]::NewLine
 
 # オプションの引数を処理する
-$args = $args | ForEach-Object {
-   if ($_ -eq "-NoHeader") {
-       $includeHeader = $false
-   }
-   elseif ($_ -match "-NewLineChar:(.+)") {
-       $newLineChar = $matches[1]
-   }
+foreach ($arg in $args) {
+    if ($arg -eq "-NoHeader") {
+        $includeHeader = $false
+    }
+    elseif ($arg -match "^-NewLineChar:(.+)$") {
+        $newLineChar = $matches[1]
+    }
 }
+
+# CSV ファイルを読み込む
+$csvData = Get-Content $csvPath | Select-Object -Skip 1 # ヘッダー行をスキップ
+
+# ヘッダー行を取得
+$header = (Get-Content $csvPath -TotalCount 1).Split(',')
+
+# テキストデータを格納する配列
+$txtDataArray = @()
 
 # ヘッダー行を含める場合
 if ($includeHeader) {
-   $txtData = ($csvData | ConvertTo-Text) -join $newLineChar
+    $txtDataArray += $header -join "`t"
 }
-else {
-   $txtData = ($csvData | Select-Object -Skip 1 | ConvertTo-Text) -join $newLineChar
+
+# データ行を処理
+foreach ($line in $csvData) {
+    $txtDataArray += $line.Replace(',', "`t")
 }
+
+# テキストデータを結合
+$txtData = $txtDataArray -join $newLineChar
 
 # テキストファイルを保存する
 $txtData | Out-File -FilePath $txtPath -Encoding utf8

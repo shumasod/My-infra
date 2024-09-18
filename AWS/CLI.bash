@@ -15,7 +15,7 @@ aws elbv2 set-rule-priorities --cli-input-json '{
     ]
 }'
 
-# 作業が終了した後、優先順位をデフォルトに戻す
+# 作業が終了した後、優先順位をデフォルトに
 aws elbv2 set-rule-priorities --cli-input-json '{
     "RulePriorities": '$original_rule_priorities'
 }'

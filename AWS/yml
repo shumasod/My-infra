@@ -1,67 +1,109 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+  VPCSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: First subnet ID
+  VPCSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Second subnet ID
+
 Resources:
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      LoadBalancerName: my-alb
+      Name: my-alb
+      Scheme: internet-facing
+      SecurityGroups: 
+        - !Ref ALBSecurityGroup
       Subnets:
         - !Ref VPCSubnet1
         - !Ref VPCSubnet2
 
-  MyTargetGroup:
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  HealthyTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      LoadBalancerArn: !Ref ALB
-      TargetGroupName: my-target-group
+      Name: healthy-target-group
       Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPCId
       HealthCheckProtocol: HTTP
-      HealthCheckPort: 80
       HealthCheckPath: /
       HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
 
-  MyListener:
+  UnhealthyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: unhealthy-target-group
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPCId
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+  ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref HealthyTargetGroup
       LoadBalancerArn: !Ref ALB
       Port: 80
-      DefaultAction:
-        Type: Forward
-        TargetGroupName: !Ref MyTargetGroup
+      Protocol: HTTP
 
-  MyHealthyRule:
-    Type: AWS::ElasticLoadBalancingV2::Rule
+  HealthyRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
-      ListenerArn: !Ref MyListener
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref HealthyTargetGroup
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: X-Health-Status
+            Values:
+              - healthy
+      ListenerArn: !Ref ALBListener
       Priority: 10
-      Conditions:
-        - Field: HealthChecks
-          Values: ['healthy']
-      Actions:
-        - Type: Forward
-          TargetGroupName: !Ref MyTargetGroup
 
-  MyUnhealthyRule:
-    Type: AWS::ElasticLoadBalancingV2::Rule
+  UnhealthyRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
-      ListenerArn: !Ref MyListener
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref UnhealthyTargetGroup
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: X-Health-Status
+            Values:
+              - unhealthy
+      ListenerArn: !Ref ALBListener
       Priority: 20
-      Conditions:
-        - Field: HealthChecks
-          Values: ['unhealthy']
-      Actions:
-        - Type: Forward
-          TargetGroupName: !Ref MyUnhealthyTargetGroup
 
-  MyUnhealthyTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      LoadBalancerArn: !Ref ALB
-      TargetGroupName: my-unhealthy-target-group
-      Port: 80
-      HealthCheckProtocol: HTTP
-      HealthCheckPort: 80
-      HealthCheckPath: /
-      HealthCheckIntervalSeconds: 30
-      UnhealthyThresholdCount: 2
+Outputs:
+  ALBDNSName:
+    Description: DNS Name of the Application Load Balancer
+    Value: !GetAtt ALB.DNSName

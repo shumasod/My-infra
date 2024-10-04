@@ -1,23 +1,59 @@
-# テーブル定義を作成
-table_id = f"{dataset_id}.your_table"
-schema = [
-    bigquery.SchemaField("name", "STRING"),
-    bigquery.SchemaField("age", "INTEGER"),
-]
-table = bigquery.Table(table_id, schema=schema)
+import os
+from google.cloud import bigquery
+from google.api_core import exceptions
 
-# テーブルを作成
-table = client.create_table(table)
-print(f"Created table {table_id}")
+def create_table_and_load_data(project_id, dataset_id, table_name, schema, csv_file):
+    # BigQuery クライアントを初期化
+    client = bigquery.Client(project=project_id)
 
-# CSVデータをロード
-job_config = bigquery.LoadJobConfig(
-    source_format=bigquery.SourceFormat.CSV, skip_leading_rows=1, autodetect=True,
-)
-with open("data.csv", "rb") as source_file:
-    job = client.load_table_from_file(source_file, table_id, job_config=job_config)
+    # テーブルIDを作成
+    table_id = f"{project_id}.{dataset_id}.{table_name}"
 
-# ジョブ完了を待機
-job.result()  # API request
+    # テーブルオブジェクトを作成
+    table = bigquery.Table(table_id, schema=schema)
 
-print(f"Loaded {job.output_rows} rows into {table_id}")
+    try:
+        # テーブルを作成
+        table = client.create_table(table)
+        print(f"テーブル {table_id} を作成しました。")
+    except exceptions.Conflict:
+        print(f"テーブル {table_id} は既に存在します。")
+    except Exception as e:
+        print(f"テーブル作成中にエラーが発生しました: {e}")
+        return
+
+    # CSVデータをロードする設定
+    job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.CSV,
+        skip_leading_rows=1,
+        autodetect=True,
+    )
+
+    try:
+        with open(csv_file, "rb") as source_file:
+            job = client.load_table_from_file(source_file, table_id, job_config=job_config)
+
+        # ジョブ完了を待機
+        job.result()  # API request
+        print(f"{job.output_rows} 行を {table_id} にロードしました。")
+    except exceptions.BadRequest as e:
+        print(f"無効なリクエスト: {e}")
+    except exceptions.Forbidden as e:
+        print(f"権限がありません: {e}")
+    except Exception as e:
+        print(f"データロード中にエラーが発生しました: {e}")
+
+if __name__ == "__main__":
+    # 環境変数から設定を読み込む（または直接指定）
+    project_id = os.environ.get("BIGQUERY_PROJECT_ID")
+    dataset_id = os.environ.get("BIGQUERY_DATASET_ID")
+    table_name = os.environ.get("BIGQUERY_TABLE_NAME")
+    csv_file = os.environ.get("CSV_FILE_PATH", "data.csv")
+
+    # スキーマ定義
+    schema = [
+        bigquery.SchemaField("name", "STRING"),
+        bigquery.SchemaField("age", "INTEGER"),
+    ]
+
+    create_table_and_load_data(project_id, dataset_id, table_name, schema, csv_file)

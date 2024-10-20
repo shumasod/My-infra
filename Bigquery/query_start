@@ -1,12 +1,46 @@
-# クエリを実行
-query = """
-    SELECT name, age 
-    FROM `{project_id}.your_dataset.your_table`
-    WHERE age > 30
-"""
-query_job = client.query(query)
+from google.cloud import bigquery
+from google.api_core import exceptions
+import os
 
-# 結果を取得
-results = query_job.result()
-for row in results:
-    print(row)
+def execute_bigquery(project_id, dataset_id, table_name, min_age):
+    # BigQuery クライアントを初期化
+    client = bigquery.Client(project=project_id)
+
+    # クエリを作成
+    query = f"""
+        SELECT name, age 
+        FROM `{project_id}.{dataset_id}.{table_name}`
+        WHERE age > @min_age
+    """
+
+    # クエリパラメータを設定
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("min_age", "INT64", min_age)
+        ]
+    )
+
+    try:
+        # クエリを実行
+        query_job = client.query(query, job_config=job_config)
+
+        # 結果を取得して表示
+        results = query_job.result()
+        for row in results:
+            print(f"Name: {row['name']}, Age: {row['age']}")
+
+    except exceptions.BadRequest as e:
+        print(f"Invalid query: {e}")
+    except exceptions.Forbidden as e:
+        print(f"Permission denied: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    # 環境変数から設定を読み込む（または直接指定）
+    project_id = os.environ.get("BIGQUERY_PROJECT_ID")
+    dataset_id = os.environ.get("BIGQUERY_DATASET_ID")
+    table_name = os.environ.get("BIGQUERY_TABLE_NAME")
+    min_age = int(os.environ.get("MIN_AGE", 30))
+
+    execute_bigquery(project_id, dataset_id, table_name, min_age)

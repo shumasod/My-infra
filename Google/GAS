@@ -1,0 +1,41 @@
+function dollarToYen(dollars, exchangeRate) {
+  return dollars * exchangeRate;
+}
+
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('為替換算')
+      .addItem('ドルを円に換算', 'showConversionDialog')
+      .addToUi();
+}
+
+function showConversionDialog() {
+  var ui = SpreadsheetApp.getUi();
+  
+  var dollarResult = ui.prompt(
+    'ドルから円への換算',
+    'ドル金額を入力してください:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (dollarResult.getSelectedButton() == ui.Button.OK) {
+    var dollars = parseFloat(dollarResult.getResponseText());
+    
+    var rateResult = ui.prompt(
+      'ドルから円への換算',
+      '現在の為替レート（1ドルあたりの円）を入力してください:',
+      ui.ButtonSet.OK_CANCEL
+    );
+    
+    if (rateResult.getSelectedButton() == ui.Button.OK) {
+      var exchangeRate = parseFloat(rateResult.getResponseText());
+      
+      if (!isNaN(dollars) && !isNaN(exchangeRate)) {
+        var yen = dollarToYen(dollars, exchangeRate);
+        ui.alert('換算結果', dollars.toFixed(2) + 'ドルは' + yen.toFixed(2) + '円です。', ui.ButtonSet.OK);
+      } else {
+        ui.alert('エラー', '無効な入力です。数値を入力してください。', ui.ButtonSet.OK);
+      }
+    }
+  }
+}

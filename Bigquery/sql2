@@ -1,0 +1,6 @@
+EXPORT DATA OPTIONS(
+    uri='gs://your-bucket/export/*.parquet'
+) AS
+SELECT * 
+FROM `your-project.your_dataset.your_table`
+WHERE partition_column = '20230501'

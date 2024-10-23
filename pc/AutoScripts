@@ -1,16 +1,15 @@
-#System.Windows.Formsなどのインポート
+# System.Windows.Forms などのインポート
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Windows APIの宣言
-$signature=@'
+# Windows API の宣言
+$signature = @'
 [DllImport("user32.dll",CharSet=CharSet.Auto,CallingConvention=CallingConvention.StdCall)]
 public static extern void mouse_event(long dwFlags, long dx, long dy, long cButtons, long dwExtraInfo);
 '@
 $SendMouseClick = Add-Type -memberDefinition $signature -name "Win32MouseEventNew" -namespace Win32Functions -passThru
 
-
-# Windowsキー（Ctrl+Escキー）押下
+# Windows キー（Ctrl+Esc キー）押下
 [System.Windows.Forms.SendKeys]::SendWait("^{ESC}")
 Start-Sleep -m 100
 
@@ -18,7 +17,7 @@ Start-Sleep -m 100
 [System.Windows.Forms.SendKeys]::SendWait("paint")
 Start-Sleep -m 100
 
-# Enterボタン押下
+# Enter ボタン押下
 [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
 
 # ペイントが起動するまで待機（待機時間は適宜調整）
@@ -40,4 +39,3 @@ Start-Sleep -m 100
 [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(200, 200)
 Start-Sleep -m 100
 $SendMouseClick::mouse_event(0x00000004, 0, 0, 0, 0)
-

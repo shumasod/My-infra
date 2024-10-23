@@ -26,7 +26,10 @@ BEGIN {
     SLOW_WARN=50000
     SLOW_FATAL=100000
     slow=0
-    sleep=0
+}
+
+function sleep(ms) {
+    system("awk 'BEGIN{system(\"sleep " ms/1000 "\")}' > /dev/null 2>&1")
 }
 
 $6 ~ /PURGE/ {
@@ -71,12 +74,10 @@ $NF ~ /TCP(.*)MISS/ {
 }
 
 {
-    print
+    print $0
 
-    if (sleep > 0) {
-        system("sleep " sleep / 1000000)  # Convert microseconds to seconds
-    } else if (slow > 0) {
-        system("sleep " slow / 1000000)  # Convert microseconds to seconds
+    if (slow > 0) {
+        sleep(slow)
         slow=0
     }
 }

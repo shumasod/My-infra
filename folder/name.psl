@@ -1,5 +1,5 @@
 ##デバイス名セットアップ
 
 @echo off
-set /p newname=PC name :ShuBoooox
+set /p newname=PC name :Shu
 wmic computersystem where name="%computername%" call rename name="%newname%"

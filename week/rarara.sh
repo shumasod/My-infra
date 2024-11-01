@@ -132,4 +132,16 @@ random_cheer=${cheers[$RANDOM % ${#cheers[@]}]}
 echo -e "\n【本日の応援メッセージ】"
 echo "$random_cheer"
 
-# ハッピーメ
+# ハッピーメーター
+happy=$((RANDOM % 100 + 20)) # 木曜日なので最低20%は確保
+echo -e "\n【ハッピーメーター】"
+echo -n "["
+for ((i=0; i<happy/10; i++)); do echo -n "ら"; done
+for ((i=happy/10; i<10; i++)); do echo -n "･"; done
+echo "] $happy%"
+
+# 週末までのスケジュール
+echo -e "\n【週末までのスケジュール】"
+echo "木曜日（今日）→ 金曜日 → ＼(^o^)／"
+echo "        ↑"
+echo "    ららら♪"

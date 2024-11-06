@@ -1,0 +1,94 @@
+// テーブル定義
+const OrderTableDefinition = {
+  TableName: 'Orders',
+  KeySchema: [
+    { AttributeName: 'PK', KeyType: 'HASH' },  // パーティションキー
+    { AttributeName: 'SK', KeyType: 'RANGE' }  // ソートキー
+  ],
+  AttributeDefinitions: [
+    { AttributeName: 'PK', AttributeType: 'S' },
+    { AttributeName: 'SK', AttributeType: 'S' },
+    { AttributeName: 'GSI1PK', AttributeType: 'S' },
+    { AttributeName: 'GSI1SK', AttributeType: 'S' }
+  ],
+  GlobalSecondaryIndexes: [
+    {
+      IndexName: 'GSI1',
+      KeySchema: [
+        { AttributeName: 'GSI1PK', KeyType: 'HASH' },
+        { AttributeName: 'GSI1SK', KeyType: 'RANGE' }
+      ],
+      Projection: { ProjectionType: 'ALL' }
+    }
+  ],
+  BillingMode: 'PAY_PER_REQUEST'
+};
+
+// アイテムの例
+const orderItem = {
+  PK: 'USER#123',           // ユーザーID
+  SK: 'ORDER#2024-01-01',   // 注文日
+  orderId: 'ORD-001',
+  userId: '123',
+  orderDate: '2024-01-01',
+  status: 'COMPLETED',
+  total: 5000,
+  items: [
+    { productId: 'P1', quantity: 2, price: 1500 },
+    { productId: 'P2', quantity: 1, price: 2000 }
+  ],
+  GSI1PK: 'ORDER#COMPLETED',  // ステータスによる検索用
+  GSI1SK: '2024-01-01'        // 日付でソート
+};
+
+// クエリ例1: 特定ユーザーの注文履歴を取得
+const getUserOrders = {
+  TableName: 'Orders',
+  KeyConditionExpression: 'PK = :userId',
+  ExpressionAttributeValues: {
+    ':userId': 'USER#123'
+  }
+};
+
+// クエリ例2: 特定期間の注文を取得
+const getOrdersByDateRange = {
+  TableName: 'Orders',
+  KeyConditionExpression: 'PK = :userId AND SK BETWEEN :startDate AND :endDate',
+  ExpressionAttributeValues: {
+    ':userId': 'USER#123',
+    ':startDate': 'ORDER#2024-01-01',
+    ':endDate': 'ORDER#2024-12-31'
+  }
+};
+
+// クエリ例3: 完了済み注文を日付順に取得（GSIを使用）
+const getCompletedOrders = {
+  TableName: 'Orders',
+  IndexName: 'GSI1',
+  KeyConditionExpression: 'GSI1PK = :status',
+  ExpressionAttributeValues: {
+    ':status': 'ORDER#COMPLETED'
+  }
+};
+
+// アイテム追加
+const putOrderItem = {
+  TableName: 'Orders',
+  Item: orderItem
+};
+
+// DynamoDBクライアントを使用したクエリ実行例
+const AWS = require('aws-sdk');
+const dynamodb = new AWS.DynamoDB.DocumentClient();
+
+async function queryOrders() {
+  try {
+    const result = await dynamodb.query(getUserOrders).promise();
+    console.log('User orders:', result.Items);
+    
+    const completedOrders = await dynamodb.query(getCompletedOrders).promise();
+    console.log('Completed orders:', completedOrders.Items);
+  } catch (error) {
+    console.error('Error querying orders:', error);
+  }
+}

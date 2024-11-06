@@ -3,11 +3,9 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-# Update package index
-sudo apt-get update
-
-# Install Nginx
-sudo apt-get install -y nginx
+# Update package index and install Nginx without prompts
+sudo DEBIAN_FRONTEND=noninteractive apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
 
 # Start and enable Nginx
 sudo systemctl start nginx
@@ -17,7 +15,7 @@ sudo systemctl enable nginx
 sudo mkdir -p /var/www/example.com/html
 
 # Set the ownership and permissions for the website directory
-sudo chown -R $USER:$USER /var/www/example.com/html
+sudo chown -R www-data:www-data /var/www/example.com/html
 sudo chmod -R 755 /var/www/example.com/html
 
 # Create a sample index.html file
@@ -38,10 +36,10 @@ server {
 EOF
 
 # Enable the Nginx configuration
-sudo ln -s /etc/nginx/sites-available/example.com /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/example.com /etc/nginx/sites-enabled/
 
-# Remove default Nginx configuration (optional)
-sudo rm /etc/nginx/sites-enabled/default
+# Remove default Nginx configuration
+sudo rm -f /etc/nginx/sites-enabled/default
 
 # Test Nginx configuration
 sudo nginx -t
@@ -50,5 +48,4 @@ sudo nginx -t
 sudo systemctl reload nginx
 
 echo "Nginx server setup complete!"
-echo "Please ensure that your domain (example.com) points to this server's IP address."
-echo "You can now access your website at http://example.com"
+echo "You can now access your website at http://localhost or http://$(hostname -I | awk '{print $1}')"

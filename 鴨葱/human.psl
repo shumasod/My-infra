@@ -1,23 +1,133 @@
+# Professional Business Animation
+param(
+    [int]$AnimationSpeed = 100,
+    [switch]$Traditional = $false
+)
+
 # 色の定義
-$Red = @{ForegroundColor = "Red"}
-$Green = @{ForegroundColor = "Green"}
-$Blue = @{ForegroundColor = "Blue"}
-$Purple = @{ForegroundColor = "Magenta"}
-$Cyan = @{ForegroundColor = "Cyan"}
-$Brown = @{ForegroundColor = "DarkYellow"}
-$Reset = @{ForegroundColor = "White"}
+$colors = @{
+    Black = @{ForegroundColor = "Black"}
+    DarkBlue = @{ForegroundColor = "DarkBlue"}
+    DarkGreen = @{ForegroundColor = "DarkGreen"}
+    DarkCyan = @{ForegroundColor = "DarkCyan"}
+    DarkRed = @{ForegroundColor = "DarkRed"}
+    DarkMagenta = @{ForegroundColor = "DarkMagenta"}
+    DarkYellow = @{ForegroundColor = "DarkYellow"}
+    Gray = @{ForegroundColor = "Gray"}
+    DarkGray = @{ForegroundColor = "DarkGray"}
+    Blue = @{ForegroundColor = "Blue"}
+    Green = @{ForegroundColor = "Green"}
+    Cyan = @{ForegroundColor = "Cyan"}
+    Red = @{ForegroundColor = "Red"}
+    Magenta = @{ForegroundColor = "Magenta"}
+    Yellow = @{ForegroundColor = "Yellow"}
+    White = @{ForegroundColor = "White"}
+}
 
-# やくざの顔
-Write-Host @Brown "`n            _._._ `n           /     \ `n          | () () | `n           \  ^  / `n            ||||| `n            ||||| `n" @Reset
+# カーソル制御
+function Hide-Cursor {
+    [System.Console]::CursorVisible = $false
+}
 
-# やくざの体
-Write-Host @Purple "`n            /     \ `n           /       \ `n          /         \ `n         /           \ `n        /             \ `n       /               \ `n      /                 \ `n     /                   \ `n    /                     \ `n   /                       \ `n  /                         \ `n /                           \ `n/                             \ `n------------------------------`n" @Reset
+function Show-Cursor {
+    [System.Console]::CursorVisible = $true
+}
 
-# やくざの腕
-Write-Host @Blue "`n           /\ `n          /  \ `n         /    \ `n        /      \ `n       /        \ `n      /          \ `n     /            \ `n    /              \ `n   /                \ `n  /                  \ `n /                    \ `n/                      \ `n" @Reset
+# クリーンアップ
+function Cleanup {
+    Show-Cursor
+    Clear-Host
+    exit
+}
 
-# やくざの足
-Write-Host @Green "`n           /  \ `n          /    \ `n         /      \ `n        /        \ `n       /          \ `n      /            \ `n     /              \ `n    /                \ `n   /                  \ `n  /                    \ `n /                      \ `n/                        \ `n" @Reset
+# イベントハンドラの登録
+$null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action { Cleanup }
 
-# やくざの構え
-Write-Host @Red "`n           \\// `n            \\// `n             \// `n             //// `n            //\\ `n           //  \\ `n" @Reset
+# フレーム定義
+$businessmanFrames = @{
+    Standing = @"
+    ／￣＼
+   /  $(_  _)  \
+  |  (◎)(◎)  |
+   \   ▼    /
+    \  ▽   /
+     |_____|
+    /|   |\
+   / |   | \
+     |   |
+     |   |
+    /     \
+   /       \
+"@
+
+    Bowing = @"
+      ／￣＼
+     /  ::  \
+    |  ^__^  |
+     \      /
+    __|￣￣|__
+   /  |    |  \
+  /   |    |   \
+     /      \
+    /        \
+"@
+}
+
+# 背景定義
+$background = @"
+┏━━━━━━━━━━━━━━━━━━━━━━━┓
+┃                        ┃
+┃      和室             ┃
+┃                        ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━┛
+"@
+
+# アニメーション関数
+function Start-BusinessAnimation {
+    param (
+        [int]$Cycles = 5
+    )
+    
+    Hide-Cursor
+    try {
+        for ($i = 0; $i -lt $Cycles; $i++) {
+            Clear-Host
+            
+            # 背景表示
+            Write-Host $background @colors.DarkGray
+            
+            # メインキャラクター表示
+            if ($i % 2 -eq 0) {
+                Write-Host $businessmanFrames.Standing @colors.Blue
+            }
+            else {
+                Write-Host $businessmanFrames.Bowing @colors.Blue
+            }
+            
+            Start-Sleep -Milliseconds $AnimationSpeed
+        }
+    }
+    finally {
+        Show-Cursor
+    }
+}
+
+# メイン処理
+function Start-Main {
+    Clear-Host
+    Write-Host "ビジネスマナーアニメーション開始..." @colors.Yellow
+    Start-Sleep -Seconds 1
+    
+    try {
+        Start-BusinessAnimation -Cycles 10
+    }
+    catch {
+        Write-Error "エラーが発生しました: $_"
+    }
+    finally {
+        Cleanup
+    }
+}
+
+# プログラム実行
+Start-Main

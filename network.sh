@@ -1,5 +1,6 @@
 import time
 import subprocess
+import os
 
 # ネットワーク接続を確認するURL
 URL = "www.google.com"
@@ -18,7 +19,21 @@ def reconnect_network():
     # 例: subprocess.run(["sudo", "service", "networking", "restart"], check=True)
     pass
 
+def wait_for_container_startup():
+    # Dockerヘルスチェックファイルのパス
+    health_check_file = "/tmp/healthy"
+    
+    # ヘルスチェックファイルが作成されるまで待機
+    while not os.path.exists(health_check_file):
+        print("コンテナの起動を待っています...")
+        time.sleep(1)
+    
+    print("コンテナが起動しました。ネットワーク監視を開始します。")
+
 if __name__ == "__main__":
+    # コンテナの起動を待つ
+    wait_for_container_startup()
+
     # 監視間隔（秒）
     monitoring_interval = 300  # 5分ごとに監視
 
@@ -28,6 +43,6 @@ if __name__ == "__main__":
             reconnect_network()
         else:
             print("ネットワーク接続が正常です。")
-
+        
         # 次の監視まで待機
         time.sleep(monitoring_interval)

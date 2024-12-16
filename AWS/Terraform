@@ -1,0 +1,73 @@
+resource "aws_alb_listener" "my_listener" {
+  name        = "my-listener"
+  port        = 80
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_alb_target_group.my_target_group.arn
+  }
+
+  subnets = [
+    aws_subnet.subnet_1.arn,
+    aws_subnet.subnet_2.arn,
+  ]
+
+  listener_rule {
+    priority = 10
+    conditions = [
+      {
+        field = "healthchecks"
+        values = ["healthy"]
+      },
+    ]
+    actions = [
+      {
+        type             = "forward"
+        target_group_arn = aws_alb_target_group.my_target_group.arn
+      },
+    ]
+  }
+
+  listener_rule {
+    priority = 20
+    conditions = [
+      {
+        field = "healthchecks"
+        values = ["unhealthy"]
+      },
+    ]
+    actions = [
+      {
+        type             = "forward"
+        target_group_arn = aws_alb_target_group.my_unhealthy_target_group.arn
+      },
+    ]
+  }
+}
+
+resource "aws_alb_target_group" "my_target_group" {
+  name        = "my-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id     = aws_vpc.my_vpc.id
+  health_check {
+    interval        = 30
+    timeout        = 5
+    unhealthy_threshold = 2
+    protocol       = "HTTP"
+    path           = "/"
+  }
+}
+
+resource "aws_alb_target_group" "my_unhealthy_target_group" {
+  name        = "my-unhealthy-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id     = aws_vpc.my_vpc.id
+  health_check {
+    interval        = 30
+    timeout        = 5
+    unhealthy_threshold = 2
+    protocol       = "HTTP"
+    path           = "/"
+  }
+}

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ナルトを描画する関数
+# ナルト（通常モード）を描画する関数
 draw_naruto() {
     cat << "EOF"
                    ▄▄▄▄▄▄▄▄▄▄▄
@@ -20,7 +20,7 @@ draw_naruto() {
                 ▀████▄▄███▄▄████▀
                   ▀▀████████▀▀
                      ▀▀▀▀▀
-                   
+
 EOF
 }
 
@@ -71,3 +71,11 @@ draw_naruto_kyuubi_mode() {
 
 EOF
 }
+
+# メイン処理
+clear
+draw_naruto # 通常モードのナルトを描画
+sleep 2
+draw_naruto_chakra_mode # チャクラモードのナルトを描画
+sleep 2
+draw_naruto_kyuubi_mode # 九尾チャクラモードのナルトを描画

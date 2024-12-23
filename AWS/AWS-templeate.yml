@@ -30,3 +30,7 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref MyTargetGroup
+
+
+実行コード
+aws cloudformation create-stack --stack-name my-stack --template-body file://template.yaml

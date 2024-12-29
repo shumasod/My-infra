@@ -1,7 +1,5 @@
 #!/bin/bash
-
 # 花札こいこいゲーム
-
 # カラー定義
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -141,6 +139,7 @@ match_and_collect() {
 main_game_loop() {
   initialize_game
   local turn=0
+
   while ((${#player_hand[@]} > 0 && ${#cpu_hand[@]} > 0)); do
     display_game
     if ((turn % 2 == 0)); then

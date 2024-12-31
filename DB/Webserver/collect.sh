@@ -1,47 +1,66 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # 使用方法: ./rss_collector.sh <RSS_URL> <キーワード>
+
+# 引数の検証
+if [ $# -ne 2 ]; then
+    echo "使用方法: $0 <RSS_URL> <キーワード>" >&2
+    exit 1
+fi
 
 RSS_URL="$1"
 KEYWORD="$2"
 
 # 依存関係の確認
 check_dependencies() {
-    command -v curl >/dev/null 2>&1 || { echo >&2 "curlが必要です。インストールしてください。"; exit 1; }
-    command -v xmllint >/dev/null 2>&1 || { echo >&2 "xmllintが必要です。libxml2-utilsをインストールしてください。"; exit 1; }
+    local deps=("curl" "xmllint")
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            echo "エラー: $dep が見つかりません。インストールしてください。" >&2
+            exit 1
+        fi
+    done
 }
 
 # RSSフィードの取得と解析
 fetch_and_parse_rss() {
-    curl -s "$RSS_URL" | xmllint --format -
+    local rss_content
+    rss_content=$(curl -sS "$RSS_URL")
+    if [ $? -ne 0 ]; then
+        echo "エラー: RSSフィードの取得に失敗しました。" >&2
+        exit 1
+    fi
+    echo "$rss_content" | xmllint --format - 2>/dev/null
 }
 
 # 特定のキーワードを含む項目のフィルタリング
 filter_items() {
-    grep -i "$KEYWORD" | sed -n '/<item>/,/<\/item>/p'
+    xmllint --xpath "//item[contains(translate(title, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '$(echo "$KEYWORD" | tr '[:upper:]' '[:lower:]')')
+                      or contains(translate(description, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '$(echo "$KEYWORD" | tr '[:upper:]' '[:lower:]')')]" - 2>/dev/null
 }
 
 # 結果の整形と出力
 format_output() {
-    while read -r line; do
-        if [[ $line == *"<title>"* ]]; then
-            title=$(echo "$line" | sed -e 's/<title>//' -e 's/<\/title>//' -e 's/^[[:space:]]*//')
-            echo "タイトル: $title"
-        elif [[ $line == *"<link>"* ]]; then
-            link=$(echo "$line" | sed -e 's/<link>//' -e 's/<\/link>//' -e 's/^[[:space:]]*//')
-            echo "リンク: $link"
-        elif [[ $line == *"<description>"* ]]; then
-            description=$(echo "$line" | sed -e 's/<description>//' -e 's/<\/description>//' -e 's/^[[:space:]]*//')
-            echo "説明: $description"
-            echo "---"
-        fi
+    while IFS= read -r item; do
+        title=$(echo "$item" | xmllint --xpath "string(title)" - 2>/dev/null)
+        link=$(echo "$item" | xmllint --xpath "string(link)" - 2>/dev/null)
+        description=$(echo "$item" | xmllint --xpath "string(description)" - 2>/dev/null)
+        
+        echo "タイトル: $title"
+        echo "リンク: $link"
+        echo "説明: $description"
+        echo "---"
     done
 }
 
 # メイン処理
 main() {
     check_dependencies
-    fetch_and_parse_rss | filter_items | format_output
+    local rss_content
+    rss_content=$(fetch_and_parse_rss)
+    echo "$rss_content" | filter_items | format_output
 }
 
 # スクリプトの実行

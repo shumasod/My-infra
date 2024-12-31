@@ -1,0 +1,31 @@
+# MySQL接続情報
+$mysqlHost = "localhost"
+$mysqlUser = "your_username"
+$mysqlPassword = "your_password"
+$mysqlDatabase = "your_database"
+$mysqlTable = "your_table"
+
+# CSVファイルのパス
+$csvFilePath = ""
+
+# MySQLコマンドラインクライアントのパス
+$mysqlExePath = "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe"
+
+# SQLクエリの作成
+$sqlQuery = @"
+LOAD DATA LOCAL INFILE '$csvFilePath'
+INTO TABLE $mysqlTable
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+"@
+
+# MySQLコマンドの実行
+& $mysqlExePath -h $mysqlHost -u $mysqlUser -p$mysqlPassword $mysqlDatabase --local-infile=1 -e $sqlQuery
+
+# インポートされたレコード数の確認
+$countQuery = "SELECT COUNT(*) AS imported_records FROM $mysqlTable;"
+$result = & $mysqlExePath -h $mysqlHost -u $mysqlUser -p$mysqlPassword $mysqlDatabase -e $countQuery
+
+Write-Host "インポートが完了しました。インポートされたレコード数: $result"

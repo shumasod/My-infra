@@ -1,0 +1,4 @@
+# .bashrcの例
+alias ll='ls -la'
+export PATH=$PATH:/usr/local/bin
+PS1='\u@\h:\w\$ '  # プロンプトの表示形式

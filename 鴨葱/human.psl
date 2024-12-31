@@ -1,0 +1,140 @@
+# Professional Business Animation
+param(
+    [int]$AnimationSpeed = 100,
+    [switch]$Traditional = $false
+)
+
+# エラーアクション設定
+$ErrorActionPreference = "Stop"
+
+# 色の定義を配列に変更してより安定した参照を実現
+$colors = @(
+    @{ Name = "Black"; Code = "Black" },
+    @{ Name = "Blue"; Code = "Blue" },
+    @{ Name = "Yellow"; Code = "Yellow" },
+    @{ Name = "DarkGray"; Code = "DarkGray" }
+)
+
+# 関数: カーソルを非表示
+function Hide-Cursor {
+    try {
+        [System.Console]::CursorVisible = $false
+    }
+    catch {
+        Write-Warning "カーソルの非表示に失敗しました"
+    }
+}
+
+# 関数: カーソルを表示
+function Show-Cursor {
+    try {
+        [System.Console]::CursorVisible = $true
+    }
+    catch {
+        Write-Warning "カーソルの表示に失敗しました"
+    }
+}
+
+# 関数: クリーンアップ
+function Cleanup {
+    Show-Cursor
+    Clear-Host
+}
+
+# フレーム定義
+$frames = @{
+    Standing = @'
+    ／￣＼
+   /  $(_  _)  \
+  |  (◎)(◎)  |
+   \   ▼    /
+    \  ▽   /
+     |_____|
+    /|   |\
+   / |   | \
+     |   |
+     |   |
+    /     \
+   /       \
+'@
+
+    Bowing = @'
+      ／￣＼
+     /  ::  \
+    |  ^__^  |
+     \      /
+    __|￣￣|__
+   /  |    |  \
+  /   |    |   \
+     /      \
+    /        \
+'@
+}
+
+# 背景定義
+$background = @'
+┏━━━━━━━━━━━━━━━━━━━━━━━┓
+┃                        ┃
+┃      和室             ┃
+┃                        ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━┛
+'@
+
+# アニメーション関数
+function Start-BusinessAnimation {
+    param (
+        [int]$Cycles = 5
+    )
+    
+    Hide-Cursor
+    try {
+        for ($i = 0; $i -lt $Cycles; $i++) {
+            Clear-Host
+            
+            # 背景表示
+            Write-Host $background -ForegroundColor DarkGray
+            
+            # キャラクター表示
+            if ($i % 2 -eq 0) {
+                Write-Host $frames.Standing -ForegroundColor Blue
+            }
+            else {
+                Write-Host $frames.Bowing -ForegroundColor Blue
+            }
+            
+            Start-Sleep -Milliseconds $AnimationSpeed
+        }
+    }
+    catch {
+        Write-Error "アニメーション実行中にエラーが発生しました: $_"
+    }
+    finally {
+        Show-Cursor
+    }
+}
+
+# メイン処理
+function Start-Main {
+    try {
+        Clear-Host
+        Write-Host "ビジネスマナーアニメーション開始..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 1
+        
+        Start-BusinessAnimation -Cycles 10
+    }
+    catch {
+        Write-Error "メイン処理でエラーが発生しました: $_"
+    }
+    finally {
+        Cleanup
+    }
+}
+
+# スクリプト実行
+try {
+    Start-Main
+}
+catch {
+    Write-Error "予期せぬエラーが発生しました: $_"
+    Cleanup
+}

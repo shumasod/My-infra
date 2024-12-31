@@ -1,0 +1,14 @@
+FROM mysql:8.0
+
+# Copy the SQL script to the container
+COPY create_people_data.sql /docker-entrypoint-initdb.d/
+
+# Set the root password for MySQL
+ENV MYSQL_ROOT_PASSWORD=mysecretpassword
+
+# Expose the MySQL port
+EXPOSE 3306
+
+docker build -t my-mysql-image .
+
+docker run -d --name my-mysql-container -p 3306:3306 my-mysql-image

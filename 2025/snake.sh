@@ -18,11 +18,13 @@ draw_decoration() {
 draw_snake() {
     echo -e "${GREEN}"
     cat << "EOF"
-    _____
-   /     \    _____
-  /       \  /     \
-  \       /  \     /
-   \_____/    \___/   
+  ⠀　　＿＿
+　　／・・＼
+　　|_＿　　|
+　　　／ 　 /
+　　　￣|　/
+　　 　 │ (_ノ|
+　 　 　 ヽ＿ノ
 EOF
     echo -e "${NC}"
     echo -e "     ${YELLOW}・${NC}  ${YELLOW}・${NC}"

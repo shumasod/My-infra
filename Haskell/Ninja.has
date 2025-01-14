@@ -151,4 +151,4 @@ exampleNinja = do
             Nothing -> elementalNaruto
     
     -- 情報表示
-    putStrLn $ displayNinjaInfo equippedNaruto
+    putStrLn $ displayNinjaInfo equippedNinja

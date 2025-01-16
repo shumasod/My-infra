@@ -1,0 +1,154 @@
+module Ninja where
+
+import qualified Data.Map as Map
+import System.Random
+import Control.Monad (replicateM)
+
+-- 基本的な忍者の属性を定義
+data Ninja = Ninja {
+    ninjaName :: String,
+    level :: Int,
+    chakra :: Int,
+    health :: Int,
+    skills :: Map.Map String Int,
+    elements :: [Element],
+    equipment :: [Equipment]
+} deriving (Show)
+
+-- 忍術の属性
+data Element = Fire | Water | Earth | Wind | Lightning
+    deriving (Show, Eq, Enum, Bounded)
+
+-- 装備品の定義
+data Equipment = Equipment {
+    equipName :: String,
+    equipType :: EquipmentType,
+    power :: Int,
+    requirements :: [(String, Int)]
+} deriving (Show)
+
+-- 装備品の種類
+data EquipmentType = Weapon | Armor | Accessory
+    deriving (Show, Eq)
+
+-- 新しい忍者を作成する関数
+createNinja :: String -> Ninja
+createNinja name = Ninja {
+    ninjaName = name,
+    level = 1,
+    chakra = 100,
+    health = 100,
+    skills = Map.fromList [
+        ("Taijutsu", 1),
+        ("Ninjutsu", 1),
+        ("Genjutsu", 1)
+    ],
+    elements = [],
+    equipment = []
+}
+
+-- 忍者のレベルアップ関数
+levelUp :: Ninja -> Ninja
+levelUp ninja = ninja {
+    level = newLevel,
+    chakra = chakra ninja + 10,
+    health = health ninja + 15,
+    skills = Map.map (+1) (skills ninja)
+}
+  where newLevel = level ninja + 1
+
+-- 新しい技能を習得する関数
+learnSkill :: String -> Ninja -> Ninja
+learnSkill skillName ninja =
+    ninja { skills = Map.insertWith (+) skillName 1 (skills ninja) }
+
+-- 属性を追加する関数
+addElement :: Element -> Ninja -> Ninja
+addElement elem ninja = ninja { elements = elem : elements ninja }
+
+-- 装備を追加する関数
+equipItem :: Equipment -> Ninja -> Maybe Ninja
+equipItem equip ninja
+    | canEquip equip ninja = Just $ ninja { equipment = equip : equipment ninja }
+    | otherwise = Nothing
+
+-- 装備可能かチェックする関数
+canEquip :: Equipment -> Ninja -> Bool
+canEquip equip ninja = all checkRequirement (requirements equip)
+  where
+    checkRequirement (skill, reqLevel) =
+        maybe False (>= reqLevel) (Map.lookup skill (skills ninja))
+
+-- ランダムな忍術の属性を生成する関数
+randomElement :: IO Element
+randomElement = do
+    let elements = [minBound..maxBound] :: [Element]
+    index <- randomRIO (0, length elements - 1)
+    return $ elements !! index
+
+-- 基本的な装備品を作成する関数
+createBasicEquipment :: String -> EquipmentType -> Int -> Equipment
+createBasicEquipment name eType pwr = Equipment {
+    equipName = name,
+    equipType = eType,
+    power = pwr,
+    requirements = []
+}
+
+-- テスト用の装備品を生成
+kunai :: Equipment
+kunai = createBasicEquipment "Kunai" Weapon 5
+
+shuriken :: Equipment
+shuriken = createBasicEquipment "Shuriken" Weapon 3
+
+ninjaVest :: Equipment
+ninjaVest = Equipment {
+    equipName = "Ninja Vest",
+    equipType = Armor,
+    power = 10,
+    requirements = [("Ninjutsu", 2)]
+}
+
+-- 忍者の戦闘力を計算する関数
+calculatePower :: Ninja -> Int
+calculatePower ninja = baseStats + skillPower + equipPower + elementBonus
+  where
+    baseStats = level ninja * 10 + chakra ninja
+    skillPower = sum $ Map.elems $ skills ninja
+    equipPower = sum $ map power $ equipment ninja
+    elementBonus = length (elements ninja) * 15
+
+-- 忍者の情報を文字列で表示する関数
+displayNinjaInfo :: Ninja -> String
+displayNinjaInfo ninja = unlines [
+    "名前: " ++ ninjaName ninja,
+    "レベル: " ++ show (level ninja),
+    "チャクラ: " ++ show (chakra ninja),
+    "体力: " ++ show (health ninja),
+    "技能: " ++ show (Map.toList $ skills ninja),
+    "属性: " ++ show (elements ninja),
+    "装備: " ++ show (map equipName $ equipment ninja),
+    "戦闘力: " ++ show (calculatePower ninja)
+    ]
+
+-- サンプル使用例
+exampleNinja :: IO ()
+exampleNinja = do
+    -- 新しい忍者を作成
+    let naruto = createNinja "Naruto"
+    
+    -- レベルアップと技能習得
+    let trainedNaruto = levelUp $ learnSkill "Rasengan" naruto
+    
+    -- 属性追加
+    element <- randomElement
+    let elementalNaruto = addElement element trainedNaruto
+    
+    -- 装備追加
+    let equippedNaruto = case equipItem kunai elementalNaruto of
+            Just n -> n
+            Nothing -> elementalNaruto
+    
+    -- 情報表示
+    putStrLn $ displayNinjaInfo equippedNinja

@@ -1,9 +1,0 @@
-echo "SHOW DATABASES" | mysql $DB_USER $DB_PASS -D $DB_NAME -h $DB_HOST
-if [ $? -gt 0 ]; then
-    echo "[ERROR]データベース参照不可。シェルスクリプトを強制終了する。";
-    exit 1;
-fi
-# $DB_USER：-uroot等
-# $DB_PASS：-proot等
-# $DB_NAME：test_db等
-# $DB_HOST：localhost等

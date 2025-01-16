@@ -6,7 +6,7 @@ Import-Module ActiveDirectory
 $ComputerName = "YOUR_COMPUTER_NAME"
 $DomainName = "YOUR_DOMAIN_NAME"
 $AdminUsername = "YOUR_ADMIN_USERNAME"
-$AdminPassword = "YOUR_ADMIN_PASSWORD"
+$AdminPassword = "YOUR_ADMIN_PASSWORD" | ConvertTo-SecureString -AsPlainText -Force
 $SoftwareInstallers = @(
     "C:\path\to\installer1.exe",
     "C:\path\to\installer2.exe"
@@ -17,7 +17,7 @@ $TaskbarSettings = @{
     Alignment = "Left"
     ShowSearch = $false
     ShowCortana = $false
-    ShowTaskView = $false
+    ShowTaskView = $false 
     ShowWidgets = $false
 }
 
@@ -27,11 +27,12 @@ Rename-Computer -NewName $ComputerName
 # Windows 11の追加設定
 # TPMプロビジョニング
 if ($TPMProvisioning) {
-    Enable-BitLocker -TPMOnly
+    Enable-BitLocker -ProtectorType TPM
 }
 
 # ドメインに参加
-Join-Domain -Name $DomainName -Credential (New-Object System.Management.Automation.PSCredential($AdminUsername, $AdminPassword))
+$AdminCredential = New-Object System.Management.Automation.PSCredential($AdminUsername, $AdminPassword)
+Add-Computer -DomainName $DomainName -Credential $AdminCredential
 
 # Windows Updateの適用
 Install-WindowsUpdate -AcceptAll -IncludeRecommended
@@ -47,7 +48,7 @@ if (Test-Path $UserSettingsFile) {
 }
 
 # タスクバーの設定
-Set- taskbar $TaskbarSettings
+Set-TaskbarOptions @TaskbarSettings
 
 # 再起動
 Restart-Computer

@@ -17,3 +17,4 @@ function show_kamonegi() {
 
   echo "  作り方："
   echo "  1. 鍋にだし汁を入れて
+  echo  

@@ -10,7 +10,7 @@ ACCOUNT_ID="your-account-id"
 LB_NAME="your-load-balancer-name"
 
 # 1. 現在のリスナーとそのルールを取得
-LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn arn:aws:elasticloadbalancing:$REGION:$ACCOUNT_ID:loadbalancer/app/$LB_NAME/1234567890abcdef --query "Listeners[?Port==443].ListenerArn" --output text)
+LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn arn:aws:elasticloadbalancing:$REGION:$Sample:loadbalancer/app/$LB_NAME/1234567890abcdef --query "Listeners[?Port==443].ListenerArn" --output text)
 
 # 2. 現在のリスナーに設定されているルールを取得
 RULES=$(aws elbv2 describe-rules --listener-arn $LISTENER_ARN --query 'Rules[*].{Priority:Priority,RuleArn:RuleArn}' --output json)

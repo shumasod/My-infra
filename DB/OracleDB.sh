@@ -1,4 +1,4 @@
--- データベース作成
+-- データベースとテーブル作成
 CREATE DATABASE my_database
 USER SYS IDENTIFIED BY sys_password
 USER SYSTEM IDENTIFIED BY system_password

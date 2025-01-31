@@ -12,7 +12,7 @@ RESET='\033[H'
 # 侍の立ち姿
 samurai_standing() {
     cat << "EOF"
-        △
+        △ △
        (｀へ´)
      ξ ノ Ｙ ヽ
     ξ  | |   |
@@ -30,7 +30,7 @@ EOF
 # 侍の抜刀姿 mess mess mess
 samurai_battle() {
     cat << "EOF"
-        △    ⚔
+      △ △    ⚔
      (｀_´)ノ
     ξ/⌒Y⌒\
    ξ  | |   |

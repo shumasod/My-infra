@@ -30,7 +30,7 @@ EOF
 # 侍の抜刀姿 mess mess mess
 samurai_battle() {
     cat << "EOF"
-      △ △    ⚔
+      △ △    
      (｀_´)ノ
     ξ/⌒Y⌒\
    ξ  | |   |

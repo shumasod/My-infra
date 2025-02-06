@@ -1,11 +1,47 @@
+from airflow import DAG
+from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
+from airflow.utils.dates import days_ago
+from datetime import datetime, timedelta
+
+# DAG の設定
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': days_ago(1),
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+# DAG の定義
+dag = DAG(
+    'bigquery_export_data',
+    default_args=default_args,
+    description='BigQuery からデータをエクスポートする DAG',
+    schedule_interval=timedelta(days=1),
+    catchup=False
+)
+
+# エクスポートタスクの定義
 export_dataset = BigQueryExecuteQueryOperator(
     task_id='export_dataset',
     sql='''
         EXPORT DATA OPTIONS(
-            uri='gs://your-bucket/export/*.csv',
+            uri='gs://your-bucket/export/{{ ds }}/data_*.csv',
             format='CSV',
-            fieldDelimiter=','
+            compression='GZIP',
+            fieldDelimiter=',',
+            header=True
         ) AS
-        SELECT * FROM `your-project.your_dataset.your_table`
+        SELECT *
+        FROM `your-project.your_dataset.your_table`
+        WHERE DATE(timestamp_column) = DATE('{{ ds }}')
     ''',
+    use_legacy_sql=False,
+    location='YOUR_LOCATION',  # e.g., 'asia-northeast1'
+    dag=dag
 )
+
+# 依存関係の設定（必要に応じて）
+# export_dataset >> next_task

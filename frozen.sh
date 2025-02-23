@@ -74,7 +74,7 @@ display_animation() {
         for line in "${frame[@]}"; do
             echo -e "\033[34m$line\033[0m"  # Blue color
         done
-        echo "  Let It Go, Let It Go! ✨"
+        echo "  Let It Go🎵, Let It Go!🎵 ✨"
         sleep 0.7
     done
 }

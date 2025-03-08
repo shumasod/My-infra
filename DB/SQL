@@ -1,37 +1,147 @@
 #!/bin/bash
+#
+# MySQL 自動監視・復旧スクリプト
+# 説明: MySQLのエラーログを監視し、クラッシュを検出して自動的に復旧を試みるスクリプト
+#
 
-# MySQLのユーザー名とパスワードを設定
+# 設定
 MYSQL_USER="your_mysql_user"
 MYSQL_PASSWORD="your_mysql_password"
-
-# MySQLのデータディレクトリを設定
 MYSQL_DATA_DIR="/var/lib/mysql"
-
-# MySQLのログファイルを設定
 MYSQL_ERROR_LOG="/var/log/mysql/error.log"
+MYSQL_CONFIG_FILE="/etc/mysql/my.cnf"
+LOG_FILE="/var/log/mysql_recovery.log"
 
-# エラーログを監視してクラッシュを検出
-tail -n0 -F $MYSQL_ERROR_LOG | while read line
-do
-    if echo "$line" | grep -q "mysqld got signal"; then
-        echo "MySQLがクラッシュしました。復旧を試みます..."
-
-        # MySQLを停止
-        systemctl stop mysql
-
-        # データディレクトリの検証と修復
-        mysqlcheck -u$MYSQL_USER -p$MYSQL_PASSWORD --all-databases --auto-repair --optimize
-
-        # MySQLを再起動
-        systemctl start mysql
-
-        echo "MySQLの復旧が完了しました。"
+# 必要なコマンドの存在を確認
+for cmd in mysql mysqlcheck systemctl grep tail; do
+    if ! command -v $cmd &> /dev/null; then
+        echo "エラー: $cmd コマンドが見つかりません。インストールしてください。" | tee -a "$LOG_FILE"
+        exit 1
     fi
 done
 
+# ログファイルの存在を確認
+if [ ! -f "$MYSQL_ERROR_LOG" ]; then
+    echo "エラー: MySQL エラーログ $MYSQL_ERROR_LOG が見つかりません。" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-tail -n0 -F $MYSQL_ERROR_LOG | while read line
+# 権限の確認
+if [ "$(id -u)" -ne 0 ]; then
+    echo "警告: このスクリプトはroot権限で実行することをお勧めします。" | tee -a "$LOG_FILE"
+fi
 
-if echo "$line" | grep -q "mysqld got signal"
+# ログ関数
+log_message() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] $1" | tee -a "$LOG_FILE"
+}
 
-mysqlcheck -u$MYSQL_USER -p$MYSQL_PASSWORD --all-databases --auto-repair --optimize
+# MySQL 状態確認関数
+check_mysql_status() {
+    if systemctl is-active --quiet mysql; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# MySQL 復旧関数
+recover_mysql() {
+    log_message "MySQLがクラッシュを検出: $1"
+    
+    # MySQL 停止（すでに停止している可能性もある）
+    log_message "MySQLサービスを停止します..."
+    systemctl stop mysql
+    sleep 5
+    
+    # InnoDB 復旧モードの設定
+    if [ -f "$MYSQL_CONFIG_FILE" ]; then
+        log_message "InnoDB 復旧モードを設定します..."
+        cp "$MYSQL_CONFIG_FILE" "$MYSQL_CONFIG_FILE.bak"
+        sed -i '/\[mysqld\]/a innodb_force_recovery=1' "$MYSQL_CONFIG_FILE"
+    fi
+    
+    # MySQL 再起動
+    log_message "MySQLサービスを再起動します..."
+    systemctl start mysql
+    sleep 10
+    
+    # MySQL 起動確認
+    if ! check_mysql_status; then
+        log_message "MySQLサービスの再起動に失敗しました。より強力な復旧モードを試みます..."
+        systemctl stop mysql
+        sleep 5
+        
+        # 復旧モードを強化
+        if [ -f "$MYSQL_CONFIG_FILE" ]; then
+            sed -i 's/innodb_force_recovery=1/innodb_force_recovery=4/' "$MYSQL_CONFIG_FILE"
+        fi
+        
+        systemctl start mysql
+        sleep 10
+        
+        if ! check_mysql_status; then
+            log_message "重大なエラー: MySQLを復旧できませんでした。手動での対応が必要です。"
+            # 設定ファイルを元に戻す
+            if [ -f "$MYSQL_CONFIG_FILE.bak" ]; then
+                mv "$MYSQL_CONFIG_FILE.bak" "$MYSQL_CONFIG_FILE"
+            fi
+            exit 1
+        fi
+    fi
+    
+    # データベースの修復
+    log_message "データベースのチェックと修復を開始します..."
+    
+    # 安全な方法でパスワードを渡す
+    MYSQL_PWD="$MYSQL_PASSWORD" mysqlcheck -u"$MYSQL_USER" --all-databases --auto-repair --optimize 2>&1 | tee -a "$LOG_FILE"
+    
+    check_result=$?
+    if [ $check_result -ne 0 ]; then
+        log_message "データベースの修復中にエラーが発生しました（コード: $check_result）"
+    else
+        log_message "データベースの修復が完了しました。"
+    fi
+    
+    # 設定ファイルを元に戻す
+    if [ -f "$MYSQL_CONFIG_FILE.bak" ]; then
+        log_message "MySQL設定を復元します..."
+        mv "$MYSQL_CONFIG_FILE.bak" "$MYSQL_CONFIG_FILE"
+        systemctl restart mysql
+        sleep 5
+    fi
+    
+    # MySQLの状態を最終確認
+    if check_mysql_status; then
+        log_message "MySQLの復旧が完了しました。データベースは正常に動作しています。"
+    else
+        log_message "警告: MySQLは起動していますが、安定性を確認してください。"
+    fi
+}
+
+# シグナルハンドラ
+trap 'echo "スクリプトを終了します..."; exit 0;' SIGINT SIGTERM
+
+# メイン処理
+log_message "MySQL監視を開始します。エラーログ: $MYSQL_ERROR_LOG"
+
+# エラーパターン - 検出対象を拡張
+CRASH_PATTERNS=(
+    "mysqld got signal"
+    "Assertion failure"
+    "Fatal error"
+    "InnoDB: Assertion failure"
+    "segfault"
+)
+
+# エラーログの監視
+tail -F "$MYSQL_ERROR_LOG" | while read -r line; do
+    for pattern in "${CRASH_PATTERNS[@]}"; do
+        if echo "$line" | grep -q "$pattern"; then
+            # クラッシュ検出
+            recover_mysql "$line"
+            break
+        fi
+    done
+done

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Check if the terminal supports color
-if [ -t 1 ] && [[ "$(tput colors)" -ge 8 ]]; then
+if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
     GREEN='\033[0;32m'
     YELLOW='\033[1;33m'
     RED='\033[0;31m'
@@ -12,8 +12,6 @@ else
     RED=''
     NC=''
 fi
-
-RESET='\033[H'  # Move cursor to top-left
 
 # Function to draw New Year decoration
 draw_decoration() {
@@ -34,13 +32,13 @@ draw_snake() {
 ${NC}"
     echo -e "     ${YELLOW}・${NC}  ${YELLOW}・${NC}"
     echo "      ╲⎺╱"
-    echo "     ${GREEN}〜〜〜${NC}"
+    echo -e "     ${GREEN}〜〜〜${NC}"
 }
 
 # Main execution
 main() {
     # Clear the screen
-    clear || echo "Failed to clear screen"
+    clear 2>/dev/null || printf "\033c"
 
     # Display New Year decoration and snake
     draw_decoration
@@ -57,7 +55,7 @@ main() {
     )
 
     for message in "${messages[@]}"; do
-        sleep 1 || echo "Sleep command failed" >&2
+        sleep 1 2>/dev/null || sleep 0.1
         echo -e "\n    ${GREEN}${message}${NC}"
     done
 

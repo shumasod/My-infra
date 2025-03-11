@@ -1,0 +1,124 @@
+#!/bin/sh
+#
+# 差分バックアップスクリプト
+# 使用方法: ./diff_backup.sh [ソースディレクトリ] [バックアップディレクトリ]
+#
+
+# エラーが発生したら終了
+set -e
+
+# 日付フォーマット（YYYY-MM-DD_HHMMSS）
+DATE_FORMAT=$(date +"%Y-%m-%d_%H%M%S")
+
+# デフォルト値の設定
+SOURCE_DIR="${1:-$(pwd)}"
+BACKUP_DIR="${2:-$(pwd)/backups}"
+LATEST_LINK="$BACKUP_DIR/latest"
+CURRENT_BACKUP="$BACKUP_DIR/backup_$DATE_FORMAT"
+LOG_FILE="$BACKUP_DIR/backup_log.txt"
+
+# 関数: ログメッセージを出力
+log_message() {
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" >> "$LOG_FILE"
+    echo "$1"
+}
+
+# 関数: スクリプトの使用方法を表示
+show_usage() {
+    echo "使用方法: $0 [ソースディレクトリ] [バックアップディレクトリ]"
+    echo "  ソースディレクトリ: バックアップするファイルがあるディレクトリ (デフォルト: カレントディレクトリ)"
+    echo "  バックアップディレクトリ: バックアップを保存するディレクトリ (デフォルト: ./backups)"
+    exit 1
+}
+
+# ヘルプの表示
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_usage
+fi
+
+# バックアップディレクトリの作成
+if [ ! -d "$BACKUP_DIR" ]; then
+    mkdir -p "$BACKUP_DIR"
+    log_message "バックアップディレクトリを作成しました: $BACKUP_DIR"
+fi
+
+# ソースディレクトリの存在確認
+if [ ! -d "$SOURCE_DIR" ]; then
+    log_message "エラー: ソースディレクトリが存在しません: $SOURCE_DIR"
+    exit 1
+fi
+
+# 現在のバックアップディレクトリを作成
+mkdir -p "$CURRENT_BACKUP"
+log_message "新しいバックアップを開始します: $CURRENT_BACKUP"
+
+# rsyncが利用可能か確認
+if command -v rsync > /dev/null 2>&1; then
+    # rsyncを使った差分バックアップ
+    if [ -d "$LATEST_LINK" ]; then
+        log_message "rsyncを使用して差分バックアップを実行します"
+        rsync -a --link-dest="$LATEST_LINK" "$SOURCE_DIR/" "$CURRENT_BACKUP/"
+    else
+        log_message "前回のバックアップが見つかりません。フルバックアップを実行します"
+        rsync -a "$SOURCE_DIR/" "$CURRENT_BACKUP/"
+    fi
+else
+    # rsyncがない場合は、基本的なコマンドで差分バックアップを行う
+    log_message "rsyncが見つかりません。基本コマンドで差分バックアップを実行します"
+
+    # 前回のバックアップがあるか確認
+    if [ -d "$LATEST_LINK" ]; then
+        # ソースディレクトリのファイルをループ処理
+        find "$SOURCE_DIR" -type f | while read -r file; do
+            # ソースディレクトリからの相対パス
+            rel_path="${file#$SOURCE_DIR/}"
+            src_file="$SOURCE_DIR/$rel_path"
+            prev_file="$LATEST_LINK/$rel_path"
+            dest_file="$CURRENT_BACKUP/$rel_path"
+            
+            # 宛先ディレクトリの作成
+            mkdir -p "$(dirname "$dest_file")"
+            
+            # ファイルが前回のバックアップに存在するか確認
+            if [ -f "$prev_file" ]; then
+                # ファイルが変更されているか確認
+                if ! cmp -s "$src_file" "$prev_file"; then
+                    # 変更されている場合はコピー
+                    cp -p "$src_file" "$dest_file"
+                else
+                    # 変更されていない場合はハードリンクで保存
+                    ln "$prev_file" "$dest_file" 2>/dev/null || cp -p "$src_file" "$dest_file"
+                fi
+            else
+                # 新しいファイルはコピー
+                cp -p "$src_file" "$dest_file"
+            fi
+        done
+        
+        # 削除されたファイルを特定するためのチェック
+        find "$LATEST_LINK" -type f | while read -r file; do
+            rel_path="${file#$LATEST_LINK/}"
+            if [ ! -f "$SOURCE_DIR/$rel_path" ]; then
+                log_message "削除されたファイル: $rel_path"
+            fi
+        done
+    else
+        # 前回のバックアップがない場合はフルバックアップ
+        cp -a "$SOURCE_DIR/." "$CURRENT_BACKUP/"
+    fi
+fi
+
+# 最新バックアップへのシンボリックリンクを更新
+if [ -L "$LATEST_LINK" ]; then
+    rm "$LATEST_LINK"
+fi
+ln -s "$CURRENT_BACKUP" "$LATEST_LINK"
+
+# バックアップ情報の記録
+log_message "バックアップが完了しました"
+log_message "バックアップサイズ: $(du -sh "$CURRENT_BACKUP" | cut -f1)"
+log_message "------------------------------------------------------"
+
+echo "バックアップが正常に完了しました。"
+echo "バックアップの場所: $CURRENT_BACKUP"
+echo "ログファイル: $LOG_FILE"

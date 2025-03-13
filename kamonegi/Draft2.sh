@@ -2,8 +2,17 @@
 
 # 鴨葱うどんを表示する関数
 function show_kamonegi() {
-  # 鴨葱うどんの画像を表示
-  curl -s https://www.google.com/search?q=kamonegi+udon&tbm=isch | grep -Eo '<img.*>' | head -n 1 | awk '{print $1}' | sed 's/<img\s\+//' | xargs wget -q -O - | display
+  echo "      ____     "
+  echo "    /      \   "
+  echo "   /  o  o   \  "
+  echo "  (    __     ) "
+  echo "   \  \__/   /  "
+  echo "    \______/    "
+  echo "    |      |    "
+  echo "  ~~|      |~~  "
+  echo "    | ~~~~ |    "
+  echo "    | ~~~~ |    "
+  echo "    ~~~~~~~~    "
 
   echo "**********************************"
   echo "** 鴨葱うどん **"
@@ -16,4 +25,14 @@ function show_kamonegi() {
   echo "    - だし汁"
 
   echo "  作り方："
-  echo "  1. 鍋にだし汁を入れて
+  echo "  1. 鍋にだし汁を入れて沸騰させる。"
+  echo "  2. うどんを袋から取り出し、鍋に入れる。"
+  echo "  3. うどんが柔らかくなったら、鴨肉を加える。"
+  echo "  4. 最後に九条ネギを加え、軽く温める。"
+  echo "  5. 器に盛り付けて完成。"
+
+  echo "**********************************"
+}
+
+# 鴨葱うどんを表示する関数を実行
+show_kamonegi

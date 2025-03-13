@@ -1,41 +1,39 @@
-#!/bin/bash -eu
+# メモリデータを保存するディレクトリを設定
+$memo_dir = "$env:USERPROFILE\memory_data"
+New-Item -ItemType Directory -Force -Path $memo_dir | Out-Null
 
-# Set the directory to store the memory data
-memo_dir="${HOME}/memory_data"
-mkdir -p "${memo_dir}"
+# 現在の日付を取得
+$today = Get-Date -Format "yyyy-MM-dd"
+$file = "$memo_dir\$today.txt"
 
-# Get the current date
-today="$(date +%Y-%m-%d)"
-file="${memo_dir}/${today}.txt"
-
-# Record the memory data from the task manager
-get_memory_data() {
-    # Get the available memory in MB
-    available_mem=$(free -m | awk '/Mem/ {print $7}')
-    echo "${available_mem}" >> "${file}"
+# タスクマネージャーからメモリデータを記録する関数
+function Get-MemoryData {
+    $available_mem = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1KB
+    $available_mem = [math]::Round($available_mem)
+    Add-Content -Path $file -Value $available_mem
 }
 
-# Calculate the average memory usage
-calculate_average() {
-    total=0
-    count=0
-
-    # Read the memory data from the file
-    while read -r line; do
-        total=$((total + line))
-        count=$((count + 1))
-    done < "${file}"
-
-    # Calculate the average
-    average=$((total / count))
-    echo "Average memory usage (MB): ${average}"
+# 平均メモリ使用量を計算する関数
+function Calculate-Average {
+    $data = Get-Content $file
+    $total = 0
+    $count = 0
+    foreach ($line in $data) {
+        $total += [int]$line
+        $count++
+    }
+    $average = $total / $count
+    Write-Host "Average memory usage (MB): $([math]::Round($average))"
 }
 
-# Record the memory data every minute
-while true; do
-    get_memory_data
-    sleep 60
-done
-
-# Calculate the average memory usage at the end of the day
-calculate_average
+# メインのループ処理
+try {
+    while ($true) {
+        Get-MemoryData
+        Start-Sleep -Seconds 60
+    }
+}
+finally {
+    # スクリプトが終了したときに平均を計算
+    Calculate-Average
+}

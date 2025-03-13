@@ -1,124 +1,495 @@
 #!/bin/sh
 #
-# 差分バックアップスクリプト
-# 使用方法: ./diff_backup.sh [ソースディレクトリ] [バックアップディレクトリ]
+# 差分バックアップスクリプト（改善版）
+# 作成者: Claude
+# バージョン: 1.1
+# 最終更新: 2025-03-13
+#
+# 使用方法: ./diff_backup.sh [オプション] [ソースディレクトリ] [バックアップディレクトリ]
 #
 
+# ===== 設定セクション =====
+# デフォルト値（これらは引数で上書き可能）
+DEFAULT_SOURCE_DIR="$(pwd)"
+DEFAULT_BACKUP_DIR="$(pwd)/backups"
+DEFAULT_RETENTION_DAYS=30  # デフォルトの保持期間（日数）
+DEFAULT_MIN_DISK_SPACE=500  # 最小必要ディスク容量（MB）
+
+# エラーコード
+readonly E_SUCCESS=0       # 成功
+readonly E_USAGE=1         # 使用方法エラー
+readonly E_NO_SOURCE=2     # ソースディレクトリなし
+readonly E_NO_BACKUP_DIR=3 # バックアップディレクトリ作成失敗
+readonly E_DISK_SPACE=4    # ディスク容量不足
+readonly E_BACKUP_FAILED=5 # バックアップ処理失敗
+readonly E_PERMISSION=6    # 権限エラー
+readonly E_UNKNOWN=99      # 不明なエラー
+
+# ===== 初期化 =====
 # エラーが発生したら終了
 set -e
 
 # 日付フォーマット（YYYY-MM-DD_HHMMSS）
-DATE_FORMAT=$(date +"%Y-%m-%d_%H%M%S")
+readonly DATE_FORMAT=$(date +"%Y-%m-%d_%H%M%S")
 
-# デフォルト値の設定
-SOURCE_DIR="${1:-$(pwd)}"
-BACKUP_DIR="${2:-$(pwd)/backups}"
-LATEST_LINK="$BACKUP_DIR/latest"
-CURRENT_BACKUP="$BACKUP_DIR/backup_$DATE_FORMAT"
-LOG_FILE="$BACKUP_DIR/backup_log.txt"
+# コマンドラインオプションの初期値
+SOURCE_DIR=""
+BACKUP_DIR=""
+VERBOSE=false
+DRY_RUN=false
+VERIFY=false
+CLEANUP=false
+RETENTION_DAYS=${DEFAULT_RETENTION_DAYS}
+MIN_DISK_SPACE=${DEFAULT_MIN_DISK_SPACE}
 
-# 関数: ログメッセージを出力
+# ===== 関数定義 =====
+# ログメッセージを出力
 log_message() {
-    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" >> "$LOG_FILE"
-    echo "$1"
-}
-
-# 関数: スクリプトの使用方法を表示
-show_usage() {
-    echo "使用方法: $0 [ソースディレクトリ] [バックアップディレクトリ]"
-    echo "  ソースディレクトリ: バックアップするファイルがあるディレクトリ (デフォルト: カレントディレクトリ)"
-    echo "  バックアップディレクトリ: バックアップを保存するディレクトリ (デフォルト: ./backups)"
-    exit 1
-}
-
-# ヘルプの表示
-if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    show_usage
-fi
-
-# バックアップディレクトリの作成
-if [ ! -d "$BACKUP_DIR" ]; then
-    mkdir -p "$BACKUP_DIR"
-    log_message "バックアップディレクトリを作成しました: $BACKUP_DIR"
-fi
-
-# ソースディレクトリの存在確認
-if [ ! -d "$SOURCE_DIR" ]; then
-    log_message "エラー: ソースディレクトリが存在しません: $SOURCE_DIR"
-    exit 1
-fi
-
-# 現在のバックアップディレクトリを作成
-mkdir -p "$CURRENT_BACKUP"
-log_message "新しいバックアップを開始します: $CURRENT_BACKUP"
-
-# rsyncが利用可能か確認
-if command -v rsync > /dev/null 2>&1; then
-    # rsyncを使った差分バックアップ
-    if [ -d "$LATEST_LINK" ]; then
-        log_message "rsyncを使用して差分バックアップを実行します"
-        rsync -a --link-dest="$LATEST_LINK" "$SOURCE_DIR/" "$CURRENT_BACKUP/"
-    else
-        log_message "前回のバックアップが見つかりません。フルバックアップを実行します"
-        rsync -a "$SOURCE_DIR/" "$CURRENT_BACKUP/"
+    local level="$1"
+    local message="$2"
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+    
+    # ログファイルがない場合は作成
+    if [ ! -e "$LOG_FILE" ]; then
+        mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+        touch "$LOG_FILE" 2>/dev/null || true
     fi
-else
-    # rsyncがない場合は、基本的なコマンドで差分バックアップを行う
-    log_message "rsyncが見つかりません。基本コマンドで差分バックアップを実行します"
+    
+    # ログファイルに書き込み
+    echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
+    
+    # 標準出力にも表示（エラーはエラー出力に）
+    if [ "$level" = "ERROR" ]; then
+        echo "[$level] $message" >&2
+    elif [ "$level" = "INFO" ] || [ "$VERBOSE" = true ]; then
+        echo "[$level] $message"
+    fi
+}
 
+# 情報ログ
+info() {
+    log_message "INFO" "$1"
+}
+
+# 警告ログ
+warn() {
+    log_message "WARNING" "$1"
+}
+
+# エラーログ
+error() {
+    log_message "ERROR" "$1"
+}
+
+# デバッグログ（詳細モードでのみ表示）
+debug() {
+    if [ "$VERBOSE" = true ]; then
+        log_message "DEBUG" "$1"
+    fi
+}
+
+# クリーンアップ処理
+cleanup() {
+    if [ "$CLEANUP" = true ] && [ -d "$BACKUP_DIR" ]; then
+        info "古いバックアップのクリーンアップを開始します（${RETENTION_DAYS}日より古いもの）"
+        
+        if [ "$DRY_RUN" = true ]; then
+            debug "ドライラン: クリーンアップはスキップします"
+            return
+        fi
+        
+        # 現在の日付からRETENTION_DAYS日前の日付を計算
+        retention_date=$(date -d "-${RETENTION_DAYS} days" +%Y%m%d 2>/dev/null || \
+                         date -v-${RETENTION_DAYS}d +%Y%m%d 2>/dev/null || \
+                         echo "")
+                         
+        if [ -z "$retention_date" ]; then
+            warn "日付計算できませんでした。クリーンアップをスキップします"
+            return
+        fi
+        
+        # バックアップディレクトリを検索し、保持期間より古いものを削除
+        find "$BACKUP_DIR" -maxdepth 1 -type d -name "backup_*" | while read -r backup_dir; do
+            # ディレクトリ名から日付部分を抽出（YYYY-MM-DD形式）
+            dir_date=$(echo "$backup_dir" | grep -o "[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}" | sed 's/-//g')
+            
+            if [ -n "$dir_date" ] && [ "$dir_date" -lt "$retention_date" ]; then
+                # latestリンクでないことを確認
+                if [ "$backup_dir" != "$(readlink -f "$LATEST_LINK")" ]; then
+                    info "古いバックアップを削除: $backup_dir"
+                    rm -rf "$backup_dir"
+                fi
+            fi
+        done
+        
+        info "クリーンアップ完了"
+    fi
+}
+
+# スクリプトの使用方法を表示
+show_usage() {
+    cat <<EOF
+差分バックアップスクリプト（改善版）
+
+使用方法: $0 [オプション] [ソースディレクトリ] [バックアップディレクトリ]
+
+引数:
+  ソースディレクトリ     バックアップするファイルがあるディレクトリ (デフォルト: カレントディレクトリ)
+  バックアップディレクトリ バックアップを保存するディレクトリ (デフォルト: ./backups)
+
+オプション:
+  -h, --help            このヘルプメッセージを表示して終了
+  -v, --verbose         詳細な出力を表示
+  -n, --dry-run         実際の変更を行わずに何が行われるかを表示
+  -c, --cleanup         保持期間より古いバックアップを削除
+  -r, --retention DAYS  バックアップの保持日数 (デフォルト: ${DEFAULT_RETENTION_DAYS}日)
+  --verify              バックアップ後に検証を実行
+  --min-space MB        必要な最小ディスク容量（MB）(デフォルト: ${DEFAULT_MIN_DISK_SPACE}MB)
+
+例:
+  $0 ~/documents ~/backups       # ~/documentsのバックアップを~/backupsに作成
+  $0 -v -c --retention 7         # 詳細モードで実行し、7日より古いバックアップをクリーンアップ
+  $0 --verify --min-space 1000   # 1GB以上の空き容量があることを確認し、バックアップを検証
+
+EOF
+    exit "$E_USAGE"
+}
+
+# ディスク容量のチェック
+check_disk_space() {
+    local dir="$1"
+    local required_mb="$2"
+    local available_kb
+    
+    # 利用可能なディスク容量を取得（KB単位）
+    available_kb=$(df -k "$(dirname "$dir")" | awk 'NR==2 {print $4}')
+    
+    # KBをMBに変換
+    local available_mb=$((available_kb / 1024))
+    
+    debug "利用可能なディスク容量: ${available_mb}MB, 必要な容量: ${required_mb}MB"
+    
+    if [ "$available_mb" -lt "$required_mb" ]; then
+        error "ディスク容量が不足しています。利用可能: ${available_mb}MB, 必要: ${required_mb}MB"
+        return 1
+    fi
+    
+    return 0
+}
+
+# バックアップの検証
+verify_backup() {
+    if [ "$VERIFY" = true ]; then
+        info "バックアップの検証を開始します"
+        
+        # 検証エラーのカウンタ
+        local errors=0
+        
+        # ソースディレクトリの各ファイルについて
+        find "$SOURCE_DIR" -type f -print | while read -r src_file; do
+            # ソースディレクトリからの相対パス
+            local rel_path="${src_file#"$SOURCE_DIR"/}"
+            local backup_file="$CURRENT_BACKUP/$rel_path"
+            
+            # ファイルの存在チェック
+            if [ ! -f "$backup_file" ]; then
+                warn "検証エラー: ファイルがバックアップに存在しません: $rel_path"
+                errors=$((errors + 1))
+                continue
+            fi
+            
+            # ファイルサイズの比較
+            local src_size=$(stat -c %s "$src_file" 2>/dev/null || stat -f %z "$src_file")
+            local backup_size=$(stat -c %s "$backup_file" 2>/dev/null || stat -f %z "$backup_file")
+            
+            if [ "$src_size" != "$backup_size" ]; then
+                warn "検証エラー: ファイルサイズが異なります: $rel_path"
+                errors=$((errors + 1))
+            fi
+        done
+        
+        if [ "$errors" -eq 0 ]; then
+            info "バックアップの検証が成功しました"
+        else
+            error "バックアップの検証で${errors}個のエラーが見つかりました"
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+# rsyncを使った差分バックアップ実行
+do_rsync_backup() {
+    info "rsyncを使用して差分バックアップを実行します"
+    
+    local rsync_opts="-a --stats"
+    
+    # 詳細モードの場合は冗長出力
+    if [ "$VERBOSE" = true ]; then
+        rsync_opts="$rsync_opts -v"
+    fi
+    
+    # ドライランの場合は--dry-runを追加
+    if [ "$DRY_RUN" = true ]; then
+        rsync_opts="$rsync_opts --dry-run"
+    fi
+    
+    # 前回のバックアップがある場合はlink-destを使用
+    if [ -d "$LATEST_LINK" ]; then
+        info "前回のバックアップを参照して差分バックアップを実行します"
+        rsync $rsync_opts --link-dest="$LATEST_LINK" "$SOURCE_DIR/" "$CURRENT_BACKUP/"
+    else
+        info "前回のバックアップが見つかりません。フルバックアップを実行します"
+        rsync $rsync_opts "$SOURCE_DIR/" "$CURRENT_BACKUP/"
+    fi
+    
+    # rsyncのステータスを返す
+    return $?
+}
+
+# 基本コマンドを使った差分バックアップ実行
+do_basic_backup() {
+    info "基本コマンドで差分バックアップを実行します"
+    
+    # ドライランの場合はメッセージだけ表示
+    if [ "$DRY_RUN" = true ]; then
+        info "ドライラン: バックアップを実行せずに終了します"
+        return 0
+    fi
+    
     # 前回のバックアップがあるか確認
     if [ -d "$LATEST_LINK" ]; then
-        # ソースディレクトリのファイルをループ処理
-        find "$SOURCE_DIR" -type f | while read -r file; do
+        info "前回のバックアップを参照して差分バックアップを実行します"
+        
+        # ソースディレクトリのファイルを処理（ファイル名の特殊文字に対応）
+        find "$SOURCE_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
             # ソースディレクトリからの相対パス
-            rel_path="${file#$SOURCE_DIR/}"
+            rel_path="${file#"$SOURCE_DIR"/}"
             src_file="$SOURCE_DIR/$rel_path"
             prev_file="$LATEST_LINK/$rel_path"
             dest_file="$CURRENT_BACKUP/$rel_path"
             
+            # 詳細モードでファイル処理を表示
+            debug "処理中: $rel_path"
+            
             # 宛先ディレクトリの作成
-            mkdir -p "$(dirname "$dest_file")"
+            mkdir -p "$(dirname "$dest_file")" || {
+                error "ディレクトリ作成に失敗: $(dirname "$dest_file")"
+                return "$E_PERMISSION"
+            }
             
             # ファイルが前回のバックアップに存在するか確認
             if [ -f "$prev_file" ]; then
                 # ファイルが変更されているか確認
                 if ! cmp -s "$src_file" "$prev_file"; then
                     # 変更されている場合はコピー
-                    cp -p "$src_file" "$dest_file"
+                    cp -p "$src_file" "$dest_file" || {
+                        error "ファイルコピーに失敗: $src_file -> $dest_file"
+                        return "$E_BACKUP_FAILED"
+                    }
+                    debug "更新されたファイル: $rel_path"
                 else
                     # 変更されていない場合はハードリンクで保存
-                    ln "$prev_file" "$dest_file" 2>/dev/null || cp -p "$src_file" "$dest_file"
+                    ln "$prev_file" "$dest_file" 2>/dev/null || cp -p "$src_file" "$dest_file" || {
+                        error "ファイルリンク/コピーに失敗: $prev_file -> $dest_file"
+                        return "$E_BACKUP_FAILED"
+                    }
+                    debug "変更なし: $rel_path (ハードリンク作成)"
                 fi
             else
                 # 新しいファイルはコピー
-                cp -p "$src_file" "$dest_file"
+                cp -p "$src_file" "$dest_file" || {
+                    error "ファイルコピーに失敗: $src_file -> $dest_file"
+                    return "$E_BACKUP_FAILED"
+                }
+                debug "新規ファイル: $rel_path"
             fi
-        done
+        done || return "$?"
         
         # 削除されたファイルを特定するためのチェック
-        find "$LATEST_LINK" -type f | while read -r file; do
-            rel_path="${file#$LATEST_LINK/}"
+        info "削除されたファイルをチェックしています..."
+        find "$LATEST_LINK" -type f -print0 | while IFS= read -r -d $'\0' file; do
+            rel_path="${file#"$LATEST_LINK"/}"
             if [ ! -f "$SOURCE_DIR/$rel_path" ]; then
-                log_message "削除されたファイル: $rel_path"
+                info "削除されたファイル: $rel_path"
             fi
         done
     else
         # 前回のバックアップがない場合はフルバックアップ
-        cp -a "$SOURCE_DIR/." "$CURRENT_BACKUP/"
+        info "前回のバックアップが見つかりません。フルバックアップを実行します"
+        cp -a "$SOURCE_DIR/." "$CURRENT_BACKUP/" || {
+            error "フルバックアップのコピーに失敗しました"
+            return "$E_BACKUP_FAILED"
+        }
+    fi
+    
+    return 0
+}
+
+# トラップ設定（終了時の処理）
+trap 'exit_status=$?; if [ $exit_status -ne 0 ]; then error "スクリプトがエラーコード $exit_status で終了しました"; fi' EXIT
+
+# ===== メイン処理 =====
+# コマンドラインオプションの解析
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            show_usage
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -n|--dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -c|--cleanup)
+            CLEANUP=true
+            shift
+            ;;
+        -r|--retention)
+            shift
+            RETENTION_DAYS="$1"
+            if ! echo "$RETENTION_DAYS" | grep -q '^[0-9]\+$'; then
+                error "保持日数は正の整数である必要があります: $RETENTION_DAYS"
+                exit "$E_USAGE"
+            fi
+            shift
+            ;;
+        --verify)
+            VERIFY=true
+            shift
+            ;;
+        --min-space)
+            shift
+            MIN_DISK_SPACE="$1"
+            if ! echo "$MIN_DISK_SPACE" | grep -q '^[0-9]\+$'; then
+                error "最小ディスク容量は正の整数である必要があります: $MIN_DISK_SPACE"
+                exit "$E_USAGE"
+            fi
+            shift
+            ;;
+        -*)
+            error "不明なオプション: $1"
+            show_usage
+            ;;
+        *)
+            # 最初の非オプション引数はソースディレクトリ
+            if [ -z "$SOURCE_DIR" ]; then
+                SOURCE_DIR="$1"
+            # 2番目の非オプション引数はバックアップディレクトリ
+            elif [ -z "$BACKUP_DIR" ]; then
+                BACKUP_DIR="$1"
+            else
+                error "余分な引数: $1"
+                show_usage
+            fi
+            shift
+            ;;
+    esac
+done
+
+# デフォルト値の設定
+SOURCE_DIR="${SOURCE_DIR:-$DEFAULT_SOURCE_DIR}"
+BACKUP_DIR="${BACKUP_DIR:-$DEFAULT_BACKUP_DIR}"
+LATEST_LINK="$BACKUP_DIR/latest"
+CURRENT_BACKUP="$BACKUP_DIR/backup_$DATE_FORMAT"
+LOG_FILE="$BACKUP_DIR/backup_log.txt"
+
+# ソースディレクトリの存在確認
+if [ ! -d "$SOURCE_DIR" ]; then
+    error "エラー: ソースディレクトリが存在しません: $SOURCE_DIR"
+    exit "$E_NO_SOURCE"
+fi
+
+# 詳細情報の表示
+debug "設定:"
+debug "  ソースディレクトリ: $SOURCE_DIR"
+debug "  バックアップディレクトリ: $BACKUP_DIR"
+debug "  現在のバックアップ: $CURRENT_BACKUP"
+debug "  詳細モード: $VERBOSE"
+debug "  ドライラン: $DRY_RUN"
+debug "  バックアップ検証: $VERIFY"
+debug "  クリーンアップ: $CLEANUP (保持日数: $RETENTION_DAYS)"
+debug "  最小ディスク容量: $MIN_DISK_SPACE MB"
+
+# バックアップディレクトリの作成
+if [ ! -d "$BACKUP_DIR" ]; then
+    info "バックアップディレクトリを作成しています: $BACKUP_DIR"
+    
+    if [ "$DRY_RUN" = false ]; then
+        mkdir -p "$BACKUP_DIR" || {
+            error "バックアップディレクトリの作成に失敗しました: $BACKUP_DIR"
+            exit "$E_NO_BACKUP_DIR"
+        }
     fi
 fi
 
-# 最新バックアップへのシンボリックリンクを更新
-if [ -L "$LATEST_LINK" ]; then
-    rm "$LATEST_LINK"
+# ディスク容量チェック
+if [ "$DRY_RUN" = false ]; then
+    check_disk_space "$BACKUP_DIR" "$MIN_DISK_SPACE" || exit "$E_DISK_SPACE"
 fi
-ln -s "$CURRENT_BACKUP" "$LATEST_LINK"
+
+# 現在のバックアップディレクトリを作成
+if [ "$DRY_RUN" = false ]; then
+    mkdir -p "$CURRENT_BACKUP" || {
+        error "現在のバックアップディレクトリの作成に失敗しました: $CURRENT_BACKUP"
+        exit "$E_NO_BACKUP_DIR"
+    }
+fi
+info "新しいバックアップを開始します: $CURRENT_BACKUP"
+
+# rsyncが利用可能か確認してバックアップを実行
+if command -v rsync > /dev/null 2>&1; then
+    do_rsync_backup || {
+        error "rsyncバックアップに失敗しました"
+        exit "$E_BACKUP_FAILED"
+    }
+else
+    # rsyncがない場合は、基本的なコマンドで差分バックアップを行う
+    info "rsyncが見つかりません。基本コマンドでバックアップを実行します"
+    do_basic_backup || {
+        error "基本バックアップに失敗しました"
+        exit "$E_BACKUP_FAILED"
+    }
+fi
+
+# 最新バックアップへのシンボリックリンクを更新
+if [ "$DRY_RUN" = false ]; then
+    if [ -L "$LATEST_LINK" ]; then
+        rm "$LATEST_LINK"
+    fi
+    ln -s "$CURRENT_BACKUP" "$LATEST_LINK" || {
+        warn "最新バックアップへのシンボリックリンク作成に失敗しました"
+    }
+fi
+
+# バックアップの検証
+if [ "$DRY_RUN" = false ]; then
+    verify_backup || {
+        warn "バックアップの検証でエラーが発生しました"
+    }
+fi
+
+# 古いバックアップのクリーンアップ
+cleanup
 
 # バックアップ情報の記録
-log_message "バックアップが完了しました"
-log_message "バックアップサイズ: $(du -sh "$CURRENT_BACKUP" | cut -f1)"
-log_message "------------------------------------------------------"
+if [ "$DRY_RUN" = false ]; then
+    backup_size=$(du -sh "$CURRENT_BACKUP" 2>/dev/null | cut -f1 || echo "不明")
+else
+    backup_size="ドライラン（サイズ計算なし）"
+fi
+
+info "バックアップが完了しました"
+info "バックアップサイズ: $backup_size"
+info "------------------------------------------------------"
 
 echo "バックアップが正常に完了しました。"
-echo "バックアップの場所: $CURRENT_BACKUP"
+[ "$DRY_RUN" = false ] && echo "バックアップの場所: $CURRENT_BACKUP"
 echo "ログファイル: $LOG_FILE"
+
+exit "$E_SUCCESS"

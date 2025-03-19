@@ -6,7 +6,7 @@ if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
     RED='\033[0;31m'
     BLUE='\033[0;34m'
     GRAY='\033[1;30m'
-    NC='\033[0m'    # No Color
+    NC='\033[0m'    
 else
     BLACK=''
     RED=''

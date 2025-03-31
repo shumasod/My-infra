@@ -41,22 +41,29 @@ echo -e "${MAGENTA}★                                            ★${RESET}"
 echo -e "${RED}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★${RESET}"
 echo -e "\n\n"
 
-# バースデーケーキのアスキーアート
-echo -e "${YELLOW}        ,,,,,,,,,,,,,        ${RESET}"
-echo -e "${YELLOW}     ,@@@@@@@@@@@@@@@@,     ${RESET}"
-echo -e "${YELLOW}   ,@@@@@@@@@@@@@@@@@@@@@,   ${RESET}"
-echo -e "${YELLOW}  @@@@@@@@@@@@@@@@@@@@@@@@@  ${RESET}"
-echo -e "${YELLOW} @@@@@@@@@@@@@@@@@@@@@@@@@@@ ${RESET}"
-
-# ろうそく
-echo -e "${RED}    \|/${BLUE}  \|/${RED}  \|/${MAGENTA}  \|/${CYAN}  \|/${GREEN}  \|/${RESET}"
-echo -e "${RED}     |${BLUE}    |${RED}    |${MAGENTA}    |${CYAN}    |${GREEN}    |${RESET}"
-
-echo -e "${MAGENTA} =========================== ${RESET}"
-echo -e "${CYAN} |${YELLOW} ○  ○  ○  ○  ○  ○  ○ ${CYAN}| ${RESET}"
-echo -e "${CYAN} |${YELLOW}  ○  ○  ○  ○  ○  ○   ${CYAN}| ${RESET}"
-echo -e "${CYAN} |${YELLOW} ○  ○  ○  ○  ○  ○  ○ ${CYAN}| ${RESET}"
-echo -e "${MAGENTA} =========================== ${RESET}"
+# バースデーケーキの改良アスキーアート
+echo -e "${YELLOW}     |v|v|v|v|v|v|v|v|v|v|v|v|     ${RESET}"
+echo -e "${YELLOW}     '\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"'     ${RESET}"
+echo -e "${YELLOW}      {                     }      ${RESET}"
+echo -e "${RED}      {         TO          }      ${RESET}"
+echo -e "${YELLOW}      {                     }      ${RESET}"
+echo -e "${YELLOW}  <<<${CYAN}<<<<<<<<<<<<<<<<<<<<<<<<${YELLOW}>>>  ${RESET}"
+echo -e "${YELLOW}  {{                           }}  ${RESET}"
+echo -e "${YELLOW}  {{       ${MAGENTA}${name}さん${YELLOW}        }}  ${RESET}"
+echo -e "${YELLOW}  {{                           }}  ${RESET}"
+echo -e "${YELLOW}  {{   ${GREEN}\|/\  /\|/\  /\|/\  /\|/${YELLOW}   }}  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}:   ${RED}H  A  P  P  Y${CYAN}           ${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}:   ${GREEN}\|/\  /\|/\  /\|/\  /\|/${CYAN}   ${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  |${CYAN}O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${YELLOW}:|  ${RESET}"
+echo -e "${YELLOW}  {{                           }}  ${RESET}"
+echo -e "${YELLOW}  {{    ${RED}B I R T H D A Y${YELLOW}      }}  ${RESET}"
+echo -e "${YELLOW}  {{                           }}  ${RESET}"
+echo -e "${YELLOW}  \"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"  ${RESET}"
 
 # 風船が浮かび上がるアニメーション
 for i in {1..10}; do
@@ -74,22 +81,29 @@ for i in {1..10}; do
     echo -e "${RED}★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★${RESET}"
     echo -e "\n\n"
     
-    # ケーキを表示
-    echo -e "${YELLOW}        ,,,,,,,,,,,,,        ${RESET}"
-    echo -e "${YELLOW}     ,@@@@@@@@@@@@@@@@,     ${RESET}"
-    echo -e "${YELLOW}   ,@@@@@@@@@@@@@@@@@@@@@,   ${RESET}"
-    echo -e "${YELLOW}  @@@@@@@@@@@@@@@@@@@@@@@@@  ${RESET}"
-    echo -e "${YELLOW} @@@@@@@@@@@@@@@@@@@@@@@@@@@ ${RESET}"
-    
-    # ろうそく
-    echo -e "${RED}    \|/${BLUE}  \|/${RED}  \|/${MAGENTA}  \|/${CYAN}  \|/${GREEN}  \|/${RESET}"
-    echo -e "${RED}     |${BLUE}    |${RED}    |${MAGENTA}    |${CYAN}    |${GREEN}    |${RESET}"
-    
-    echo -e "${MAGENTA} =========================== ${RESET}"
-    echo -e "${CYAN} |${YELLOW} ○  ○  ○  ○  ○  ○  ○ ${CYAN}| ${RESET}"
-    echo -e "${CYAN} |${YELLOW}  ○  ○  ○  ○  ○  ○   ${CYAN}| ${RESET}"
-    echo -e "${CYAN} |${YELLOW} ○  ○  ○  ○  ○  ○  ○ ${CYAN}| ${RESET}"
-    echo -e "${MAGENTA} =========================== ${RESET}"
+    # 改良したケーキを表示
+    echo -e "${YELLOW}     |v|v|v|v|v|v|v|v|v|v|v|v|     ${RESET}"
+    echo -e "${YELLOW}     '\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"'     ${RESET}"
+    echo -e "${YELLOW}      {                     }      ${RESET}"
+    echo -e "${RED}      {         TO          }      ${RESET}"
+    echo -e "${YELLOW}      {                     }      ${RESET}"
+    echo -e "${YELLOW}  <<<${CYAN}<<<<<<<<<<<<<<<<<<<<<<<<${YELLOW}>>>  ${RESET}"
+    echo -e "${YELLOW}  {{                           }}  ${RESET}"
+    echo -e "${YELLOW}  {{       ${MAGENTA}${name}さん${YELLOW}        }}  ${RESET}"
+    echo -e "${YELLOW}  {{                           }}  ${RESET}"
+    echo -e "${YELLOW}  {{   ${GREEN}\|/\  /\|/\  /\|/\  /\|/${YELLOW}   }}  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}:   ${RED}H  A  P  P  Y${CYAN}           ${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}:   ${GREEN}\|/\  /\|/\  /\|/\  /\|/${CYAN}   ${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}:                           ${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  |${CYAN}O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${CYAN}=O${YELLOW}=O${RED}=O${GREEN}=O${BLUE}=O${MAGENTA}=O${YELLOW}:|  ${RESET}"
+    echo -e "${YELLOW}  {{                           }}  ${RESET}"
+    echo -e "${YELLOW}  {{    ${RED}B I R T H D A Y${YELLOW}      }}  ${RESET}"
+    echo -e "${YELLOW}  {{                           }}  ${RESET}"
+    echo -e "${YELLOW}  \"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"\"  ${RESET}"
     
     # 風船を表示（上昇するように位置を調整）
     for j in $(seq 1 $position); do

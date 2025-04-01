@@ -18,7 +18,7 @@ echo -e "${CYAN}name:${RESET}"
 read name
 
 if [ -z "$name" ]; then
-    name="あなた"
+    name="名前"
 fi
 
 # カウントダウンアニメーション

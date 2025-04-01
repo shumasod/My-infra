@@ -13,7 +13,7 @@ RESET='\033[0m'
 clear
 
 # 名前を入力してもらう
-echo -e "${CYAN}お誕生日を祝う相手の名前を入力してください:${RESET}"
+echo -e "${CYAN}name:${RESET}"
 read name
 
 if [ -z "$name" ]; then

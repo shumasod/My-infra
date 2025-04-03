@@ -1,0 +1,218 @@
+module Ninja where
+
+import qualified Data.Map as Map
+import System.Random
+import Control.Monad (replicateM)
+import Data.List (nub)
+
+-- 型エイリアス
+type SkillName = String
+type SkillLevel = Int
+type Requirement = (SkillName, SkillLevel)
+
+-- 基本的な忍者の属性を定義
+data Ninja = Ninja {
+    ninjaName :: String,
+    level :: Int,
+    chakra :: Int,
+    health :: Int,
+    skills :: Map.Map SkillName SkillLevel,
+    elements :: [Element],
+    equipment :: [Equipment]
+} deriving (Show)
+
+-- 忍術の属性
+data Element = Fire | Water | Earth | Wind | Lightning
+    deriving (Show, Eq, Enum, Bounded)
+
+-- 装備品の定義
+data Equipment = Equipment {
+    equipName :: String,
+    equipType :: EquipmentType,
+    power :: Int,
+    requirements :: [Requirement]
+} deriving (Show)
+
+-- 装備品の種類
+data EquipmentType = Weapon | Armor | Accessory
+    deriving (Show, Eq)
+
+-- 定数
+maxLevel :: Int
+maxLevel = 100
+
+maxChakra :: Int
+maxChakra = 1000
+
+maxHealth :: Int
+maxHealth = 1000
+
+maxSkillLevel :: Int
+maxSkillLevel = 100
+
+-- 入力値の検証
+validateName :: String -> Bool
+validateName name = not (null name) && length name <= 50
+
+validatePower :: Int -> Bool
+validatePower power = power >= 0 && power <= 1000
+
+-- 新しい忍者を作成する関数
+-- 名前が無効な場合はNothing、それ以外はJust Ninja
+createNinja :: String -> Maybe Ninja
+createNinja name
+    | not (validateName name) = Nothing
+    | otherwise = Just Ninja {
+        ninjaName = name,
+        level = 1,
+        chakra = 100,
+        health = 100,
+        skills = Map.fromList [
+            ("Taijutsu", 1),
+            ("Ninjutsu", 1),
+            ("Genjutsu", 1)
+        ],
+        elements = [],
+        equipment = []
+    }
+
+-- 忍者のレベルアップ関数（上限付き）
+levelUp :: Ninja -> Ninja
+levelUp ninja = ninja {
+    level = min maxLevel newLevel,
+    chakra = min maxChakra (chakra ninja + 10),
+    health = min maxHealth (health ninja + 15),
+    skills = Map.map (\v -> min maxSkillLevel (v + 1)) (skills ninja)
+}
+  where newLevel = level ninja + 1
+
+-- 新しい技能を習得する関数
+learnSkill :: SkillName -> Ninja -> Ninja
+learnSkill skillName ninja =
+    ninja { skills = Map.insertWith (\new old -> min maxSkillLevel (old + new)) skillName 1 (skills ninja) }
+
+-- 属性を追加する関数（重複防止）
+addElement :: Element -> Ninja -> Ninja
+addElement elem ninja 
+    | elem `elem` elements ninja = ninja  -- 既に持っている場合は変更なし
+    | otherwise = ninja { elements = elem : elements ninja }
+
+-- 装備を追加する関数（同じタイプの装備は置き換える）
+equipItem :: Equipment -> Ninja -> Maybe Ninja
+equipItem equip ninja
+    | not (validatePower (power equip)) = Nothing  -- パワーのバリデーション
+    | canEquip equip ninja = Just $ ninja { 
+        equipment = equip : filter (\e -> equipType e /= equipType equip) (equipment ninja) 
+      }
+    | otherwise = Nothing
+
+-- 装備可能かチェックする関数
+canEquip :: Equipment -> Ninja -> Bool
+canEquip equip ninja = all checkRequirement (requirements equip)
+  where
+    checkRequirement (skill, reqLevel) =
+        maybe False (>= reqLevel) (Map.lookup skill (skills ninja))
+
+-- ランダムな忍術の属性を生成する関数（セーフなバージョン）
+randomElement :: IO Element
+randomElement = do
+    let elements = [minBound..maxBound] :: [Element]
+    index <- randomRIO (0, length elements - 1)
+    return $ elements !! index
+
+-- 安全なランダムな属性の生成（例外処理付き）
+safeRandomElement :: IO (Maybe Element)
+safeRandomElement = do
+    result <- try randomElement :: IO (Either IOError Element)
+    case result of
+        Left _ -> return Nothing
+        Right element -> return (Just element)
+  where
+    try :: IO a -> IO (Either IOError a)
+    try = Control.Exception.try
+
+-- 基本的な装備品を作成する関数（バリデーション付き）
+createBasicEquipment :: String -> EquipmentType -> Int -> Maybe Equipment
+createBasicEquipment name eType pwr
+    | not (validateName name) = Nothing
+    | not (validatePower pwr) = Nothing
+    | otherwise = Just Equipment {
+        equipName = name,
+        equipType = eType,
+        power = pwr,
+        requirements = []
+    }
+
+-- 上級装備品を作成する関数（バリデーション付き）
+createAdvancedEquipment :: String -> EquipmentType -> Int -> [Requirement] -> Maybe Equipment
+createAdvancedEquipment name eType pwr reqs
+    | not (validateName name) = Nothing
+    | not (validatePower pwr) = Nothing
+    | not (all (\(_, level) -> level > 0 && level <= maxSkillLevel) reqs) = Nothing
+    | otherwise = Just Equipment {
+        equipName = name,
+        equipType = eType,
+        power = pwr,
+        requirements = reqs
+    }
+
+-- テスト用の装備品を生成（安全なバージョン）
+kunai :: Maybe Equipment
+kunai = createBasicEquipment "Kunai" Weapon 5
+
+shuriken :: Maybe Equipment
+shuriken = createBasicEquipment "Shuriken" Weapon 3
+
+ninjaVest :: Maybe Equipment
+ninjaVest = createAdvancedEquipment "Ninja Vest" Armor 10 [("Ninjutsu", 2)]
+
+-- 忍者の戦闘力を計算する関数
+calculatePower :: Ninja -> Int
+calculatePower ninja = baseStats + skillPower + equipPower + elementBonus
+  where
+    baseStats = level ninja * 10 + chakra ninja
+    skillPower = sum $ Map.elems $ skills ninja
+    equipPower = sum $ map power $ equipment ninja
+    elementBonus = length (nub $ elements ninja) * 15  -- 重複した属性は計算しない
+
+-- 忍者の情報を文字列で表示する関数
+displayNinjaInfo :: Ninja -> String
+displayNinjaInfo ninja = unlines [
+    "名前: " ++ ninjaName ninja,
+    "レベル: " ++ show (level ninja) ++ "/" ++ show maxLevel,
+    "チャクラ: " ++ show (chakra ninja) ++ "/" ++ show maxChakra,
+    "体力: " ++ show (health ninja) ++ "/" ++ show maxHealth,
+    "技能: " ++ show (Map.toList $ skills ninja),
+    "属性: " ++ show (nub $ elements ninja),  -- 重複を除いて表示
+    "装備: " ++ show (map equipName $ equipment ninja),
+    "戦闘力: " ++ show (calculatePower ninja)
+    ]
+
+-- サンプル使用例
+exampleNinja :: IO ()
+exampleNinja = do
+    -- 新しい忍者を作成
+    case createNinja "Naruto" of
+        Nothing -> putStrLn "無効な忍者名です"
+        Just naruto -> do
+            -- レベルアップと技能習得
+            let trainedNaruto = levelUp $ learnSkill "Rasengan" naruto
+            
+            -- 属性追加
+            elementResult <- safeRandomElement
+            let elementalNaruto = case elementResult of
+                  Nothing -> trainedNaruto
+                  Just element -> addElement element trainedNaruto
+            
+            -- 装備追加
+            let equippedNaruto = case kunai of
+                  Nothing -> elementalNaruto
+                  Just k -> case equipItem k elementalNaruto of
+                      Just n -> n
+                      Nothing -> elementalNaruto
+            
+            -- 情報表示
+            putStrLn $ displayNinjaInfo equippedNaruto
+
+-- エラー処理のためのインポート
+import Control.Exception (try)

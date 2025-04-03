@@ -1,0 +1,192 @@
+/**
+ * スポンサー担当の情報とタスク表を見やすく整形するスクリプト
+ * エラー修正版：setIndentメソッドを使用せず同等の効果を実現
+ */
+
+function formatEnhancedSponsorTable() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  
+  // データ構造の定義 - 役割とタスクの構造化
+  const tableData = [
+    {
+      role: "監視担当",
+      tasks: [
+        "• スポンサー申し込みのチェック",
+        "• スポンサー担当のアサイン"
+      ]
+    },
+    {
+      role: "スポンサー担当",
+      tasks: [
+        "• 担当するスポンサーの書類、forteeページ作成",
+        "• 担当するスポンサーとの連絡",
+        "• 担当するスポンサーの提出物管理",
+        "• 担当するスポンサーのステータス変更"
+      ]
+    },
+    {
+      role: "入金確認担当",
+      tasks: [
+        "• スポンサーからの入金確認"
+      ]
+    }
+  ];
+  
+  // 1. テーブルの基本構造をクリア・作成
+  setupTableStructure(sheet, tableData);
+  
+  // 2. 表のスタイリングを適用
+  applyTableStyling(sheet, tableData);
+  
+  // 3. ヘッダーとタイトルを設定
+  setupHeaders(sheet);
+  
+  // スプレッドシートにメニューを追加
+  createCustomMenu();
+}
+
+/**
+ * テーブルの基本構造をセットアップ
+ */
+function setupTableStructure(sheet, tableData) {
+  // シートをクリア（A5:C20の範囲）- 必要に応じて範囲調整
+  sheet.getRange("A5:C20").clearContent().clearFormat();
+  
+  // 列幅の設定
+  sheet.setColumnWidth(1, 150);  // A列: 役割
+  sheet.setColumnWidth(2, 400);  // B列: タスク
+  
+  // データの挿入
+  let currentRow = 6;
+  
+  // テーブルのヘッダー行
+  sheet.getRange("A5").setValue("役割");
+  sheet.getRange("B5").setValue("担当タスク");
+  
+  // 各役割とタスクを挿入
+  tableData.forEach(section => {
+    // 役割名を入力
+    sheet.getRange(currentRow, 1).setValue(section.role);
+    
+    // 各タスクを入力
+    section.tasks.forEach((task, index) => {
+      if (index === 0) {
+        // 最初のタスクは役割と同じ行
+        sheet.getRange(currentRow, 2).setValue(task);
+      } else {
+        // 2つ目以降のタスクは次の行に
+        currentRow++;
+        sheet.getRange(currentRow, 2).setValue(task);
+      }
+    });
+    
+    // 次の役割のための行を追加
+    currentRow += 2;
+  });
+}
+
+/**
+ * 表全体のスタイリングを適用
+ */
+function applyTableStyling(sheet, tableData) {
+  // 最終行を計算
+  let lastRow = 5; // ヘッダー行
+  tableData.forEach(section => {
+    lastRow += section.tasks.length + 1; // タスク + 間隔
+  });
+  lastRow -= 1; // 最後の間隔調整
+  
+  // テーブル全体の罫線
+  const tableRange = sheet.getRange(`A5:B${lastRow}`);
+  tableRange.setBorder(
+    true, true, true, true, true, true,
+    "black", SpreadsheetApp.BorderStyle.SOLID
+  );
+  
+  // ヘッダー行のスタイル
+  const headerRange = sheet.getRange("A5:B5");
+  headerRange.setBackground("#e6e6e6")
+             .setFontWeight("bold")
+             .setHorizontalAlignment("center")
+             .setVerticalAlignment("middle");
+  
+  // 役割列のスタイル設定
+  let currentRow = 6;
+  tableData.forEach(section => {
+    // 役割セルを結合
+    if (section.tasks.length > 1) {
+      sheet.getRange(currentRow, 1, section.tasks.length, 1).merge();
+    }
+    
+    // 役割セルのスタイル
+    sheet.getRange(currentRow, 1, section.tasks.length, 1)
+         .setBackground("#f2f2f2")
+         .setFontWeight("bold")
+         .setVerticalAlignment("middle")
+         .setHorizontalAlignment("center");
+    
+    // タスクセルのスタイル - setIndentを使わずに左揃えと折り返しのみ設定
+    sheet.getRange(currentRow, 2, section.tasks.length, 1)
+         .setVerticalAlignment("middle")
+         .setHorizontalAlignment("left")
+         .setWrap(true);
+    
+    currentRow += section.tasks.length + 1;
+  });
+  
+  // 交互の行の色分け（読みやすさ向上）
+  applyAlternatingRowColors(sheet, 6, lastRow);
+}
+
+/**
+ * 交互の行の色分けを適用
+ */
+function applyAlternatingRowColors(sheet, startRow, endRow) {
+  for (let i = startRow; i <= endRow; i++) {
+    if ((i - startRow) % 2 === 0) {
+      // 偶数行の背景色（より淡い色）
+      sheet.getRange(`B${i}`).setBackground("#f9f9f9");
+    }
+  }
+}
+
+/**
+ * ヘッダーとタイトルを設定
+ */
+function setupHeaders(sheet) {
+  // メインタイトル
+  sheet.getRange("A1:B1").merge();
+  sheet.getRange("A1")
+       .setValue("スポンサー担当の情報とタスク")
+       .setFontSize(14)
+       .setFontWeight("bold")
+       .setHorizontalAlignment("center")
+       .setBackground("#e0e7ff");
+  
+  // サブタイトル
+  sheet.getRange("A3:B3").merge();
+  sheet.getRange("A3")
+       .setValue("体制と役割")
+       .setFontSize(12)
+       .setFontWeight("bold")
+       .setHorizontalAlignment("left")
+       .setBackground("#f5f7ff");
+}
+
+/**
+ * カスタムメニューを作成
+ */
+function createCustomMenu() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('表の書式')
+    .addItem('スポンサー担当表を整形（拡張版）', 'formatEnhancedSponsorTable')
+    .addToUi();
+}
+
+/**
+ * スプレッドシートを開いたときに自動的にメニューを追加
+ */
+function onOpen() {
+  createCustomMenu();
+}

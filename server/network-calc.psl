@@ -1,0 +1,43 @@
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$IPAddress
+)
+
+function Convert-IPToInt64 {
+    param([string]$ip)
+    $octets = $ip.Split('.')
+    return [int64]([int64]$octets[0] * 16777216 + [int64]$octets[1] * 65536 + [int64]$octets[2] * 256 + [int64]$octets[3])
+}
+
+function Convert-Int64ToIP {
+    param([int64]$int)
+    $octet1 = [math]::Floor($int / 16777216) % 256
+    $octet2 = [math]::Floor($int / 65536) % 256
+    $octet3 = [math]::Floor($int / 256) % 256
+    $octet4 = $int % 256
+    return "$octet1.$octet2.$octet3.$octet4"
+}
+
+if ($IPAddress -match "^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$") {
+    $ip, $cidr = $IPAddress.Split('/')
+    $cidr = [int]$cidr
+
+    $ipInt = Convert-IPToInt64 -ip $ip
+    $mask = [int64]([math]::Pow(2, 32) - [math]::Pow(2, (32 - $cidr)))
+    
+    $networkInt = $ipInt -band $mask
+    $broadcastInt = $networkInt -bor ([math]::Pow(2, (32 - $cidr)) - 1)
+    
+    $firstHostInt = $networkInt + 1
+    $lastHostInt = $broadcastInt - 1
+    $totalHosts = [math]::Pow(2, (32 - $cidr)) - 2
+
+    Write-Host "入力されたIP: $IPAddress"
+    Write-Host "ネットワークアドレス: $(Convert-Int64ToIP -int $networkInt)"
+    Write-Host "ブロードキャストアドレス: $(Convert-Int64ToIP -int $broadcastInt)"
+    Write-Host "使用可能なホスト数: $totalHosts"
+    Write-Host "最初のホストIP: $(Convert-Int64ToIP -int $firstHostInt)"
+    Write-Host "最後のホストIP: $(Convert-Int64ToIP -int $lastHostInt)"
+} else {
+    Write-Host "無効なIP形式です。例: 192.168.1.0/24"
+}

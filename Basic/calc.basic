@@ -1,0 +1,15 @@
+10 PRINT "簡易計算機プログラム"
+20 PRINT "1:足し算 2:引き算 3:掛け算 4:割り算"
+30 INPUT "選択してください (1-4): ", C
+40 INPUT "一つ目の数字: ", A
+50 INPUT "二つ目の数字: ", B
+60 IF C = 1 THEN RESULT = A + B
+70 IF C = 2 THEN RESULT = A - B
+80 IF C = 3 THEN RESULT = A * B
+90 IF C = 4 AND B <> 0 THEN RESULT = A / B
+100 IF C = 4 AND B = 0 THEN PRINT "エラー：0で割ることはできません": GOTO 30
+110 PRINT "結果: "; RESULT
+120 INPUT "続けますか？ (Y/N): ", R$
+130 IF R$ = "Y" OR R$ = "y" THEN GOTO 20
+140 PRINT "終了します"
+150 END

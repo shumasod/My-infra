@@ -1,11 +1,51 @@
 load_data = BigQueryExecuteQueryOperator(
     task_id='load_data',
     sql=f'''
-        LOAD DATA
-        OVERWRITE
-        INTO `new_project.new_dataset.new_table`
-        FROM FILES('{new_org_bucket}/export/*.csv')
-        FORMAT CSV
-        FIELD_DELIMITER ','
+        LOAD DATA 
+        OVERWRITE 
+        INTO `{{{{ params.dest_project }}}}.{{{{ params.dest_dataset }}}}.{{{{ params.dest_table }}}}` 
+        FROM FILES(
+            format='CSV',
+            uris=['gs://{{{{ params.dest_bucket }}}}/{{{{ params.export_prefix }}}}/*.csv'],
+            field_delimiter=',',
+            skip_leading_rows=1,
+            null_marker='NULL',
+            quote='"',
+            allow_quoted_newlines=True,
+            allow_jagged_rows=False,
+            max_bad_records=10
+        )
+        WITH CONNECTION `{{{{ params.region }}}}.{{{{ params.connection_name }}}}`
+        OPTIONS(
+            ignore_unknown_values=True,
+            create_disposition='CREATE_IF_NEEDED',
+            write_disposition='WRITE_TRUNCATE',
+            description='Imported from {{{{ params.source_project }}}}.{{{{ params.source_dataset }}}}.{{{{ params.source_table }}}} on {{{{ ts }}}}'
+        )
     ''',
+    params={
+        'dest_project': '{{ var.value.dest_project_id }}',
+        'dest_dataset': '{{ var.value.dest_dataset_id }}',
+        'dest_table': '{{ var.value.dest_table_id }}',
+        'dest_bucket': '{{ var.value.dest_gcs_bucket }}',
+        'export_prefix': '{{ var.value.export_prefix|default("export") }}',
+        'region': '{{ var.value.region|default("us") }}',
+        'connection_name': '{{ var.value.connection_name }}',
+        'source_project': '{{ var.value.source_project_id }}',
+        'source_dataset': '{{ var.value.source_dataset_id }}',
+        'source_table': '{{ var.value.source_table_id }}'
+    },
+    use_legacy_sql=False,
+    location='{{ var.value.bq_location|default("asia-northeast1") }}',
+    gcp_conn_id='dest_google_cloud_default',
+    labels={
+        'dag_id': '{{ dag.dag_id }}',
+        'task_id': '{{ task.task_id }}',
+        'run_id': '{{ run_id }}',
+        'data_source': 'migration'
+    },
+    impersonation_chain='{{ var.value.service_account_email|default("") }}',
+    deferrable=True,
+    retries=3,
+    retry_delay=timedelta(minutes=2)
 )

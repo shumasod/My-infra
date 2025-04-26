@@ -27,7 +27,7 @@ BEGIN
         VALUES (
             CONCAT('FirstName', i),
             CONCAT('LastName', i),
-            CONCAT('customer', i, '@example.com,yahho.com'),
+            CONCAT('customer', i, '@example.com'),
             CONCAT('+1-555-555-', LPAD(i, 4, '0')),
             CONCAT('Address', i),
             CONCAT('City', i),
@@ -37,7 +37,7 @@ BEGIN
         );
         SET i = i + 1;
     END WHILE;
-
+END //
 DELIMITER ;
 
 -- ダミーデータの挿入（10万人分）

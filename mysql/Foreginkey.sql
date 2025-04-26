@@ -15,15 +15,16 @@ SELECT
         AND t.table_name = tc.table_name
         AND c.column_name = kcu.column_name
         AND NOT EXISTS (
-            SELECT 1 
-            FROM information_schema.tables ft
-            LEFT JOIN information_schema.columns fc 
-                ON fc.table_name = ft.table_name 
-                AND fc.table_schema = ft.table_schema
-            WHERE ft.table_schema = ccu.table_schema 
-                AND ft.table_name = ccu.table_name
-                AND fc.column_name = ccu.column_name
-        )
+    SELECT 1 
+    FROM information_schema.tables ft
+    LEFT JOIN information_schema.columns fc 
+        ON fc.table_name = ft.table_name 
+        AND fc.table_schema = ft.table_schema
+    WHERE ft.table_schema = ccu.table_schema 
+        AND ft.table_name = ccu.table_name
+        AND fc.column_name = ccu.column_name
+)
+        
     ) AS inconsistent_count
 FROM 
     information_schema.table_constraints AS tc 

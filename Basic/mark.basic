@@ -1,0 +1,37 @@
+10 REM 簡易的な図形描画プログラム
+20 PRINT "図形描画プログラム"
+30 PRINT "1: 四角形 2: 三角形 3: ダイヤモンド"
+40 INPUT "描画する図形を選んでください (1-3): ", C
+50 INPUT "サイズを入力してください (5-15): ", S
+60 IF S < 5 OR S > 15 THEN PRINT "サイズは5から15の間で指定してください": GOTO 50
+70 PRINT
+80 ON C GOSUB 100, 200, 300
+90 END
+
+100 REM 四角形を描画
+110 FOR Y = 1 TO S
+120 FOR X = 1 TO S
+130 PRINT "*";
+140 NEXT X
+150 PRINT
+160 NEXT Y
+170 RETURN
+
+200 REM 三角形を描画
+210 FOR Y = 1 TO S
+220 FOR X = 1 TO Y
+230 PRINT "*";
+240 NEXT X
+250 PRINT
+260 NEXT Y
+270 RETURN
+
+300 REM ダイヤモンドを描画
+310 MID = INT(S / 2) + 1
+320 FOR Y = 1 TO S
+330 FOR X = 1 TO S
+340 IF ABS(X - MID) + ABS(Y - MID) <= MID - 1 THEN PRINT "*"; ELSE PRINT " ";
+350 NEXT X
+360 PRINT
+370 NEXT Y
+380 RETURN

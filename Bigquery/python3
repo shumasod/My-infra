@@ -1,29 +1,146 @@
-from airflow.models import DAG
+from airflow.models import DAG, Variable
 from airflow.utils.dates import days_ago
+from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
+from airflow.providers.google.cloud.transfers.gcs_to_gcs import GCSToGCSOperator
+from airflow.operators.python import PythonOperator
+from airflow.utils.task_group import TaskGroup
+from datetime import datetime, timedelta
+import logging
 
+# Airflow Configuration
+default_args = {
+    'owner': 'data_engineering',
+    'depends_on_past': False,
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'email': Variable.get('alert_email', default_var='admin@example.com'),
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+    'execution_timeout': timedelta(hours=1),
+}
+
+# DAG definition with clear description
 dag = DAG(
-    dag_id='bq_migration',
-    schedule_interval='@daily',  # 毎日実行
-    start_date=days_ago(2),
+    dag_id='bq_historical_migration',
+    description='BigQueryの履歴データ移行用DAG（過去30日分）',
+    schedule_interval=None,  # 手動実行に変更
+    start_date=days_ago(1),
+    default_args=default_args,
+    catchup=False,
+    max_active_runs=1,
+    tags=['bigquery', 'migration', 'historical'],
 )
 
-# 一日分のデータを取得・移行するタスク
-def generate_tasks(date):
-    with dag:
+# Parameter extraction from Airflow Variables
+PARAMS = {
+    'source_project': Variable.get('source_project_id', default_var='your-project'),
+    'source_dataset': Variable.get('source_dataset_id', default_var='your_dataset'),
+    'source_table': Variable.get('source_table_id', default_var='your_table'),
+    'gcs_bucket': Variable.get('gcs_bucket', default_var='your-bucket'),
+    'gcs_export_prefix': Variable.get('gcs_export_prefix', default_var='export'),
+    'dest_project': Variable.get('dest_project_id', default_var='new-project'),
+    'dest_dataset': Variable.get('dest_dataset_id', default_var='new_dataset'),
+    'dest_table': Variable.get('dest_table_id', default_var='new_table'),
+    'days_to_process': int(Variable.get('days_to_process', default_var='30')),
+    'location': Variable.get('bq_location', default_var='US'),
+    'export_format': Variable.get('export_format', default_var='PARQUET'),
+}
+
+# Logger setup
+def log_processing_date(date, **kwargs):
+    """日付の処理開始をログに記録"""
+    logging.info(f"Processing data for date: {date}")
+    return date
+
+def generate_date_partition(days_back):
+    """日付パーティションを生成する関数"""
+    return (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+
+# テスト用のデータ日付リスト生成
+test_dates = [generate_date_partition(n) for n in range(1, PARAMS['days_to_process'] + 1)]
+logging.info(f"Generated {len(test_dates)} date partitions to process")
+
+# 日付ごとのタスクグループを生成
+for date_idx, process_date in enumerate(test_dates):
+    # タスクグループを作成して日付ごとのタスクをまとめる
+    with TaskGroup(group_id=f'migrate_data_{process_date.replace("-", "_")}', dag=dag) as date_group:
+        
+        # 日付処理開始のログ記録
+        log_date = PythonOperator(
+            task_id=f'log_processing_{process_date.replace("-", "_")}',
+            python_callable=log_processing_date,
+            op_kwargs={'date': process_date},
+            dag=dag,
+        )
+        
+        # BigQueryからGCSへのエクスポート
         export_data = BigQueryExecuteQueryOperator(
-            task_id=f'export_data_{date}',
+            task_id=f'export_data_{process_date.replace("-", "_")}',
             sql=f"""
                 EXPORT DATA OPTIONS(
-                    uri='gs://your-bucket/export/{date}/*.parquet'
+                    uri='gs://{PARAMS['gcs_bucket']}/{PARAMS['gcs_export_prefix']}/{process_date.replace("-", "")}/*.{PARAMS['export_format'].lower()}',
+                    format='{PARAMS['export_format']}',
+                    compression='GZIP'
                 ) AS
                 SELECT *
-                FROM `your-project.your_dataset.your_table` 
-                WHERE timestamp BETWEEN '{date} 00:00:00' AND '{date} 23:59:59'
+                FROM `{PARAMS['source_project']}.{PARAMS['source_dataset']}.{PARAMS['source_table']}` 
+                WHERE DATE(timestamp) = '{process_date}'
             """,
+            use_legacy_sql=False,
+            location=PARAMS['location'],
+            gcp_conn_id='google_cloud_default',
+            dag=dag,
         )
-        # その他の移行タスク...
+        
+        # 組織間でのGCSデータ転送
+        # 注意: 別の組織間でコピーする場合は、適切なサービスアカウント権限が必要
+        copy_to_destination = GCSToGCSOperator(
+            task_id=f'copy_to_destination_{process_date.replace("-", "_")}',
+            source_bucket=PARAMS['gcs_bucket'],
+            source_object=f"{PARAMS['gcs_export_prefix']}/{process_date.replace('-', '')}/*",
+            destination_bucket=PARAMS['gcs_bucket'],  # 別組織の場合は異なるバケット名
+            destination_object=f"dest_{PARAMS['gcs_export_prefix']}/{process_date.replace('-', '')}/",
+            move_object=False,
+            gcp_conn_id='google_cloud_default',
+            dag=dag,
+        )
+        
+        # GCSからBigQueryへのインポート
+        import_data = BigQueryExecuteQueryOperator(
+            task_id=f'import_data_{process_date.replace("-", "_")}',
+            sql=f"""
+                LOAD DATA INTO `{PARAMS['dest_project']}.{PARAMS['dest_dataset']}.{PARAMS['dest_table']}` 
+                FROM FILES(
+                    format='{PARAMS['export_format']}',
+                    uris=['gs://{PARAMS['gcs_bucket']}/dest_{PARAMS['gcs_export_prefix']}/{process_date.replace("-", "")}/*']
+                )
+                OPTIONS(
+                    create_disposition='CREATE_IF_NEEDED',
+                    write_disposition='WRITE_APPEND'
+                )
+            """,
+            use_legacy_sql=False,
+            location=PARAMS['location'],
+            gcp_conn_id='google_cloud_default',
+            dag=dag,
+        )
+        
+        # タスク内の順序設定
+        log_date >> export_data >> copy_to_destination >> import_data
+    
+    # 日付間の依存関係を追加（オプション: 並列実行する場合は削除）
+    if date_idx > 0:
+        previous_date = test_dates[date_idx - 1]
+        dag.get_task_group(f'migrate_data_{previous_date.replace("-", "_")}') >> date_group
 
-# 過去30日分のタスクを生成
-for n in range(1, 31):
-    date = (datetime.now() - timedelta(n)).strftime('%Y%m%d')
-    generate_tasks(date)
+# タスク完了ログ
+completion_log = PythonOperator(
+    task_id='migration_complete',
+    python_callable=lambda **kwargs: logging.info(f"Historical data migration completed for {PARAMS['days_to_process']} days of data."),
+    dag=dag,
+)
+
+# 最後の日付タスクグループを完了ログにつなげる
+if test_dates:
+    last_date = test_dates[-1]
+    dag.get_task_group(f'migrate_data_{last_date.replace("-", "_")}') >> completion_log

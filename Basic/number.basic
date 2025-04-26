@@ -1,0 +1,16 @@
+10 PRINT "数当てゲーム"
+20 PRINT "1から100までの数字を当ててください"
+30 LET S = INT(RND(1) * 100) + 1
+40 LET T = 0
+50 PRINT "予想を入力してください："
+60 INPUT G
+70 LET T = T + 1
+80 IF G < S THEN PRINT "もっと大きいです": GOTO 50
+90 IF G > S THEN PRINT "もっと小さいです": GOTO 50
+100 PRINT "正解です！ 答え："; S
+110 PRINT "あなたは"; T; "回で当てました"
+120 PRINT
+130 INPUT "もう一度プレイしますか? (Y/N): ", R$
+140 IF R$ = "Y" OR R$ = "y" THEN GOTO 20
+150 PRINT "プレイしてくれてありがとう！"
+160 END

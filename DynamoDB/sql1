@@ -1,6 +1,9 @@
-// テーブル定義
+// 環境変数からテーブル名を取得（より柔軟性が高い）
+const ORDERS_TABLE = process.env.ORDERS_TABLE || 'Orders';
+
+// テーブル定義の改善
 const OrderTableDefinition = {
-  TableName: 'Orders',
+  TableName: ORDERS_TABLE,
   KeySchema: [
     { AttributeName: 'PK', KeyType: 'HASH' },  // パーティションキー
     { AttributeName: 'SK', KeyType: 'RANGE' }  // ソートキー
@@ -18,77 +21,299 @@ const OrderTableDefinition = {
         { AttributeName: 'GSI1PK', KeyType: 'HASH' },
         { AttributeName: 'GSI1SK', KeyType: 'RANGE' }
       ],
-      Projection: { ProjectionType: 'ALL' }
+      Projection: { ProjectionType: 'ALL' },
+      // PAY_PER_REQUESTモードではProvisionedThroughputは不要だが、
+      // クロスリージョン互換性のために記述することも可能
     }
   ],
-  BillingMode: 'PAY_PER_REQUEST'
+  BillingMode: 'PAY_PER_REQUEST',
+  // タグ付けを追加（コスト管理に有用）
+  Tags: [
+    { Key: 'Environment', Value: process.env.ENVIRONMENT || 'development' },
+    { Key: 'Project', Value: 'OrderManagement' }
+  ]
 };
 
-// アイテムの例
-const orderItem = {
-  PK: 'USER#123',           // ユーザーID
-  SK: 'ORDER#2024-01-01',   // 注文日
-  orderId: 'ORD-001',
-  userId: '123',
-  orderDate: '2024-01-01',
-  status: 'COMPLETED',
-  total: 5000,
-  items: [
-    { productId: 'P1', quantity: 2, price: 1500 },
-    { productId: 'P2', quantity: 1, price: 2000 }
-  ],
-  GSI1PK: 'ORDER#COMPLETED',  // ステータスによる検索用
-  GSI1SK: '2024-01-01'        // 日付でソート
-};
-
-// クエリ例1: 特定ユーザーの注文履歴を取得
-const getUserOrders = {
-  TableName: 'Orders',
-  KeyConditionExpression: 'PK = :userId',
-  ExpressionAttributeValues: {
-    ':userId': 'USER#123'
+/**
+ * 注文アイテムのバリデーション
+ * @param {Object} order - 注文オブジェクト
+ * @returns {Boolean} - バリデーション結果
+ */
+function validateOrder(order) {
+  if (!order.userId || !order.orderDate || !order.items || !Array.isArray(order.items)) {
+    return false;
   }
-};
-
-// クエリ例2: 特定期間の注文を取得
-const getOrdersByDateRange = {
-  TableName: 'Orders',
-  KeyConditionExpression: 'PK = :userId AND SK BETWEEN :startDate AND :endDate',
-  ExpressionAttributeValues: {
-    ':userId': 'USER#123',
-    ':startDate': 'ORDER#2024-01-01',
-    ':endDate': 'ORDER#2024-12-31'
+  
+  if (order.items.some(item => !item.productId || typeof item.quantity !== 'number' || typeof item.price !== 'number')) {
+    return false;
   }
-};
+  
+  return true;
+}
 
-// クエリ例3: 完了済み注文を日付順に取得（GSIを使用）
-const getCompletedOrders = {
-  TableName: 'Orders',
-  IndexName: 'GSI1',
-  KeyConditionExpression: 'GSI1PK = :status',
-  ExpressionAttributeValues: {
-    ':status': 'ORDER#COMPLETED'
+/**
+ * 注文アイテムの作成
+ * @param {Object} orderData - 注文データ
+ * @returns {Object} - DynamoDB形式の注文アイテム
+ */
+function createOrderItem(orderData) {
+  if (!validateOrder(orderData)) {
+    throw new Error('Invalid order data');
   }
-};
+  
+  // 合計金額を計算
+  const total = orderData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  
+  return {
+    PK: `USER#${orderData.userId}`,
+    SK: `ORDER#${orderData.orderDate}#${orderData.orderId}`,  // 注文日 + 注文ID で一意性を確保
+    orderId: orderData.orderId,
+    userId: orderData.userId,
+    orderDate: orderData.orderDate,
+    createdAt: new Date().toISOString(),
+    status: orderData.status || 'PENDING',
+    total,
+    items: orderData.items,
+    // GSI1は注文ステータスと日付による検索用
+    GSI1PK: `STATUS#${orderData.status || 'PENDING'}`,  // プレフィックスを明確に
+    GSI1SK: orderData.orderDate  // 日付でソート
+  };
+}
 
-// アイテム追加
-const putOrderItem = {
-  TableName: 'Orders',
-  Item: orderItem
-};
+// AWS SDKをインポート（v3形式に更新）
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { 
+  DynamoDBDocumentClient, 
+  QueryCommand, 
+  PutCommand,
+  BatchWriteCommand
+} = require('@aws-sdk/lib-dynamodb');
 
-// DynamoDBクライアントを使用したクエリ実行例
-const AWS = require('aws-sdk');
-const dynamodb = new AWS.DynamoDB.DocumentClient();
+// リージョンを環境変数から取得
+const region = process.env.AWS_REGION || 'us-east-1';
+const client = new DynamoDBClient({ region });
+const docClient = DynamoDBDocumentClient.from(client);
 
-async function queryOrders() {
+/**
+ * 特定ユーザーの注文履歴を取得
+ * @param {string} userId - ユーザーID
+ * @param {Object} options - 追加オプション（ページネーションなど）
+ * @returns {Promise<Object>} - クエリ結果
+ */
+async function getUserOrders(userId, options = {}) {
+  // 入力検証
+  if (!userId) throw new Error('UserId is required');
+  
+  const params = {
+    TableName: ORDERS_TABLE,
+    KeyConditionExpression: 'PK = :userId',
+    ExpressionAttributeValues: {
+      ':userId': `USER#${userId}`
+    },
+    ScanIndexForward: options.ascending !== false, // デフォルトは昇順
+    Limit: options.limit || 50,
+  };
+  
+  // ページネーションの処理
+  if (options.lastEvaluatedKey) {
+    params.ExclusiveStartKey = options.lastEvaluatedKey;
+  }
+  
   try {
-    const result = await dynamodb.query(getUserOrders).promise();
-    console.log('User orders:', result.Items);
-    
-    const completedOrders = await dynamodb.query(getCompletedOrders).promise();
-    console.log('Completed orders:', completedOrders.Items);
+    const command = new QueryCommand(params);
+    const result = await docClient.send(command);
+    return result;
   } catch (error) {
-    console.error('Error querying orders:', error);
+    console.error('Error querying user orders:', error);
+    throw error;
   }
 }
+
+/**
+ * 特定期間の注文を取得
+ * @param {string} userId - ユーザーID
+ * @param {string} startDate - 開始日
+ * @param {string} endDate - 終了日
+ * @returns {Promise<Object>} - クエリ結果
+ */
+async function getOrdersByDateRange(userId, startDate, endDate) {
+  // 入力検証
+  if (!userId || !startDate || !endDate) {
+    throw new Error('UserId, startDate and endDate are required');
+  }
+  
+  const params = {
+    TableName: ORDERS_TABLE,
+    KeyConditionExpression: 'PK = :userId AND SK BETWEEN :startDate AND :endDate',
+    ExpressionAttributeValues: {
+      ':userId': `USER#${userId}`,
+      ':startDate': `ORDER#${startDate}`,
+      ':endDate': `ORDER#${endDate}#\uFFFF`  // 終了日の最後の注文まで取得
+    }
+  };
+  
+  try {
+    const command = new QueryCommand(params);
+    const result = await docClient.send(command);
+    return result;
+  } catch (error) {
+    console.error('Error querying orders by date range:', error);
+    throw error;
+  }
+}
+
+/**
+ * 特定ステータスの注文を日付順に取得
+ * @param {string} status - 注文ステータス
+ * @param {Object} options - 追加オプション
+ * @returns {Promise<Object>} - クエリ結果
+ */
+async function getOrdersByStatus(status, options = {}) {
+  // 入力検証
+  if (!status) throw new Error('Status is required');
+  
+  const params = {
+    TableName: ORDERS_TABLE,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'GSI1PK = :status',
+    ExpressionAttributeValues: {
+      ':status': `STATUS#${status}`
+    },
+    ScanIndexForward: options.ascending !== false, // デフォルトは昇順（古い順）
+    Limit: options.limit || 50
+  };
+  
+  // 特定期間のフィルタリングを追加
+  if (options.startDate && options.endDate) {
+    params.KeyConditionExpression += ' AND GSI1SK BETWEEN :startDate AND :endDate';
+    params.ExpressionAttributeValues[':startDate'] = options.startDate;
+    params.ExpressionAttributeValues[':endDate'] = options.endDate;
+  }
+  
+  // ページネーションの処理
+  if (options.lastEvaluatedKey) {
+    params.ExclusiveStartKey = options.lastEvaluatedKey;
+  }
+  
+  try {
+    const command = new QueryCommand(params);
+    const result = await docClient.send(command);
+    return result;
+  } catch (error) {
+    console.error('Error querying orders by status:', error);
+    throw error;
+  }
+}
+
+/**
+ * 注文を保存
+ * @param {Object} orderData - 注文データ
+ * @returns {Promise<Object>} - 保存結果
+ */
+async function saveOrder(orderData) {
+  try {
+    const orderItem = createOrderItem(orderData);
+    
+    const params = {
+      TableName: ORDERS_TABLE,
+      Item: orderItem,
+      // 条件式：同じ注文IDが存在しない場合のみ追加
+      ConditionExpression: 'attribute_not_exists(orderId)'
+    };
+    
+    const command = new PutCommand(params);
+    await docClient.send(command);
+    return orderItem;
+  } catch (error) {
+    console.error('Error saving order:', error);
+    throw error;
+  }
+}
+
+/**
+ * 複数の注文を一括保存
+ * @param {Array<Object>} orderDataList - 注文データリスト
+ * @returns {Promise<void>}
+ */
+async function batchSaveOrders(orderDataList) {
+  if (!Array.isArray(orderDataList) || orderDataList.length === 0) {
+    throw new Error('OrderDataList must be a non-empty array');
+  }
+  
+  // DynamoDB BatchWrite の制限（25アイテム）に対応
+  const batchSize = 25;
+  const batches = [];
+  
+  for (let i = 0; i < orderDataList.length; i += batchSize) {
+    const batch = orderDataList.slice(i, i + batchSize);
+    batches.push(batch);
+  }
+  
+  try {
+    for (const batch of batches) {
+      const params = {
+        RequestItems: {
+          [ORDERS_TABLE]: batch.map(orderData => ({
+            PutRequest: {
+              Item: createOrderItem(orderData)
+            }
+          }))
+        }
+      };
+      
+      const command = new BatchWriteCommand(params);
+      await docClient.send(command);
+    }
+  } catch (error) {
+    console.error('Error batch saving orders:', error);
+    throw error;
+  }
+}
+
+// 使用例
+async function example() {
+  try {
+    // サンプル注文データ
+    const orderData = {
+      orderId: `ORD-${Date.now()}`,
+      userId: '123',
+      orderDate: '2024-03-08',
+      status: 'PENDING',
+      items: [
+        { productId: 'P1', quantity: 2, price: 1500 },
+        { productId: 'P2', quantity: 1, price: 2000 }
+      ]
+    };
+    
+    // 注文の保存
+    await saveOrder(orderData);
+    console.log('Order saved successfully');
+    
+    // ユーザーの注文履歴を取得
+    const userOrders = await getUserOrders('123', { limit: 10 });
+    console.log('User orders:', userOrders.Items);
+    
+    // 完了済み注文を取得
+    const completedOrders = await getOrdersByStatus('COMPLETED', { 
+      ascending: false, // 最新順
+      limit: 5,
+      startDate: '2024-01-01',
+      endDate: '2024-12-31'
+    });
+    console.log('Completed orders:', completedOrders.Items);
+    
+  } catch (error) {
+    console.error('Error in example:', error);
+  }
+}
+
+module.exports = {
+  OrderTableDefinition,
+  getUserOrders,
+  getOrdersByDateRange,
+  getOrdersByStatus,
+  saveOrder,
+  batchSaveOrders,
+  validateOrder,
+  createOrderItem
+};

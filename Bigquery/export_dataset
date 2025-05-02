@@ -1,47 +1,81 @@
-from airflow import DAG
-from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
-from airflow.utils.dates import days_ago
+"""
+BigQuery データエクスポート DAG
+
+特徴:
+- 環境変数とAirflow変数を使用したパラメータ管理
+- データ検証ステップ
+- 詳細なエラーハンドリングと通知
+- エクスポート前の冪等性チェック
+- ソースデータの準備確認
+- ログ記録と監視
+- リソース制約の適切な管理
+"""
+
+import os
 from datetime import datetime, timedelta
 
-# DAG の設定
+from airflow import DAG
+from airflow.models import Variable
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.dummy import DummyOperator
+from airflow.providers.google.cloud.operators.bigquery import (
+    BigQueryExecuteQueryOperator,
+    BigQueryCheckOperator,
+    BigQueryGetDataOperator,
+)
+from airflow.providers.google.cloud.sensors.bigquery import BigQueryTableExistenceSensor
+from airflow.providers.google.cloud.sensors.gcs import GCSObjectsWithPrefixExistenceSensor
+from airflow.providers.google.cloud.transfers.bigquery_to_gcs import BigQueryToGCSOperator
+from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook
+from airflow.providers.google.cloud.hooks.gcs import GCSHook
+from airflow.utils.dates import days_ago
+from airflow.utils.email import send_email
+from airflow.exceptions import AirflowException
+
+# Airflow変数から設定を取得（なければデフォルト値を使用）
+GCP_PROJECT_ID = Variable.get("GCP_PROJECT_ID", default_var="your-project")
+BQ_DATASET = Variable.get("BQ_DATASET", default_var="your_dataset")
+BQ_TABLE = Variable.get("BQ_TABLE", default_var="your_table")
+GCS_BUCKET = Variable.get("GCS_BUCKET", default_var="your-bucket")
+BQ_LOCATION = Variable.get("BQ_LOCATION", default_var="asia-northeast1")
+TIMESTAMP_COLUMN = Variable.get("TIMESTAMP_COLUMN", default_var="timestamp_column")
+EXPORT_FORMAT = Variable.get("EXPORT_FORMAT", default_var="CSV")
+EXPORT_COMPRESSION = Variable.get("EXPORT_COMPRESSION", default_var="GZIP")
+EMAIL_RECIPIENTS = Variable.get("EMAIL_RECIPIENTS", default_var="").split(",")
+MAX_RETRIES = int(Variable.get("MAX_RETRIES", default_var="3"))
+RETRY_DELAY_MINUTES = int(Variable.get("RETRY_DELAY_MINUTES", default_var="5"))
+ROW_THRESHOLD = int(Variable.get("ROW_THRESHOLD", default_var="1"))
+
+# DAGのデフォルト設定
 default_args = {
-    'owner': 'airflow',
+    'owner': 'data-engineering',
     'depends_on_past': False,
     'start_date': days_ago(1),
-    'email_on_failure': False,
+    'email': EMAIL_RECIPIENTS,
+    'email_on_failure': True,
     'email_on_retry': False,
-    'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    'retries': MAX_RETRIES,
+    'retry_delay': timedelta(minutes=RETRY_DELAY_MINUTES),
+    'execution_timeout': timedelta(hours=2),
+    'on_failure_callback': None,  # 後で定義する関数を設定
 }
 
-# DAG の定義
+# DAGの定義
 dag = DAG(
-    'bigquery_export_data',
+    'bigquery_export_data_improved',
     default_args=default_args,
-    description='BigQuery からデータをエクスポートする DAG',
-    schedule_interval=timedelta(days=1),
-    catchup=False
+    description='BigQueryからデータをエクスポートする改良版DAG',
+    schedule_interval='0 2 * * *',  # 毎日午前2時に実行
+    catchup=False,
+    tags=['bigquery', 'export', 'data-pipeline'],
+    doc_md=__doc__,
 )
 
-# エクスポートタスクの定義
-export_dataset = BigQueryExecuteQueryOperator(
-    task_id='export_dataset',
-    sql='''
-        EXPORT DATA OPTIONS(
-            uri='gs://your-bucket/export/{{ ds }}/data_*.csv',
-            format='CSV',
-            compression='GZIP',
-            fieldDelimiter=',',
-            header=True
-        ) AS
-        SELECT *
-        FROM `your-project.your_dataset.your_table`
-        WHERE DATE(timestamp_column) = DATE('{{ ds }}')
-    ''',
-    use_legacy_sql=False,
-    location='YOUR_LOCATION',  # e.g., 'asia-northeast1'
-    dag=dag
-)
-
-# 依存関係の設定（必要に応じて）
-# export_dataset >> next_task
+# 失敗時の通知関数
+def send_failure_email(context):
+    """DAGの失敗時に詳細情報を含むメールを送信する"""
+    dag_run = context.get('dag_run')
+    task_instances = dag_run.get_task_instances()
+    title = f"Airflow Alert: {context.get('task_instance').dag_id} failed"
+    
+    b

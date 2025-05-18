@@ -1,64 +1,109 @@
-module Ninja where
+module Ninja 
+    ( -- * 基本型
+      Ninja(..)
+    , Element(..)
+    , Equipment(..)
+    , EquipmentType(..)
+    -- * 型エイリアス
+    , SkillName
+    , SkillLevel
+    , Requirement
+    -- * 忍者作成と強化
+    , createNinja
+    , levelUp
+    , learnSkill
+    , addElement
+    , equipItem
+    -- * 装備作成
+    , createBasicEquipment
+    , createAdvancedEquipment
+    -- * ユーティリティ
+    , calculatePower
+    , displayNinjaInfo
+    -- * サンプル関数
+    , exampleNinja
+    ) where
 
 import qualified Data.Map as Map
-import System.Random
+import System.Random (randomRIO)
 import Control.Monad (replicateM)
 import Data.List (nub)
+import Control.Exception (try)
 
--- 型エイリアス
+-- -----------------------------------------------------------------------------
+-- 型定義
+-- -----------------------------------------------------------------------------
+
+-- | 技能名と技能レベルの型エイリアス
 type SkillName = String
 type SkillLevel = Int
 type Requirement = (SkillName, SkillLevel)
 
--- 基本的な忍者の属性を定義
+-- | 忍者の属性を定義
 data Ninja = Ninja {
-    ninjaName :: String,
-    level :: Int,
-    chakra :: Int,
-    health :: Int,
-    skills :: Map.Map SkillName SkillLevel,
-    elements :: [Element],
-    equipment :: [Equipment]
+    ninjaName :: String,  -- ^ 忍者の名前
+    level :: Int,         -- ^ 忍者のレベル
+    chakra :: Int,        -- ^ チャクラ量
+    health :: Int,        -- ^ 体力
+    skills :: Map.Map SkillName SkillLevel,  -- ^ 習得技能と熟練度
+    elements :: [Element],  -- ^ 習得した属性
+    equipment :: [Equipment]  -- ^ 装備している道具
 } deriving (Show)
 
--- 忍術の属性
+-- | 忍術の属性
 data Element = Fire | Water | Earth | Wind | Lightning
     deriving (Show, Eq, Enum, Bounded)
 
--- 装備品の定義
+-- | 装備品の定義
 data Equipment = Equipment {
-    equipName :: String,
-    equipType :: EquipmentType,
-    power :: Int,
-    requirements :: [Requirement]
+    equipName :: String,          -- ^ 装備名
+    equipType :: EquipmentType,   -- ^ 装備種類
+    power :: Int,                 -- ^ 装備の強さ
+    requirements :: [Requirement]  -- ^ 装備に必要な条件
 } deriving (Show)
 
--- 装備品の種類
+-- | 装備品の種類
 data EquipmentType = Weapon | Armor | Accessory
     deriving (Show, Eq)
 
+-- -----------------------------------------------------------------------------
 -- 定数
+-- -----------------------------------------------------------------------------
+
+-- | 最大レベル
 maxLevel :: Int
 maxLevel = 100
 
+-- | 最大チャクラ量
 maxChakra :: Int
 maxChakra = 1000
 
+-- | 最大体力
 maxHealth :: Int
 maxHealth = 1000
 
+-- | 最大技能レベル
 maxSkillLevel :: Int
 maxSkillLevel = 100
 
--- 入力値の検証
+-- -----------------------------------------------------------------------------
+-- バリデーション関数
+-- -----------------------------------------------------------------------------
+
+-- | 名前の検証: 空でなく50文字以下
 validateName :: String -> Bool
 validateName name = not (null name) && length name <= 50
 
+-- | パワー値の検証: 0以上1000以下
 validatePower :: Int -> Bool
 validatePower power = power >= 0 && power <= 1000
 
--- 新しい忍者を作成する関数
--- 名前が無効な場合はNothing、それ以外はJust Ninja
+-- -----------------------------------------------------------------------------
+-- 忍者関連の主要関数
+-- -----------------------------------------------------------------------------
+
+-- | 新しい忍者を作成する関数
+-- | 名前が無効な場合はNothing、それ以外はJust Ninja
 createNinja :: String -> Maybe Ninja
 createNinja name
     | not (validateName name) = Nothing
@@ -76,7 +121,7 @@ createNinja name
         equipment = []
     }
 
--- 忍者のレベルアップ関数（上限付き）
+-- | 忍者のレベルアップ関数（上限付き）
 levelUp :: Ninja -> Ninja
 levelUp ninja = ninja {
     level = min maxLevel newLevel,
@@ -84,54 +129,61 @@ levelUp ninja = ninja {
     health = min maxHealth (health ninja + 15),
     skills = Map.map (\v -> min maxSkillLevel (v + 1)) (skills ninja)
 }
-  where newLevel = level ninja + 1
+  where
+    newLevel = level ninja + 1
 
--- 新しい技能を習得する関数
+-- | 新しい技能を習得する関数
 learnSkill :: SkillName -> Ninja -> Ninja
 learnSkill skillName ninja =
-    ninja { skills = Map.insertWith (\new old -> min maxSkillLevel (old + new)) skillName 1 (skills ninja) }
+    ninja { skills = Map.insertWith updateSkill skillName 1 (skills ninja) }
+  where
+    updateSkill new old = min maxSkillLevel (old + new)
 
--- 属性を追加する関数（重複防止）
+-- | 属性を追加する関数（重複防止）
 addElement :: Element -> Ninja -> Ninja
 addElement elem ninja 
     | elem `elem` elements ninja = ninja  -- 既に持っている場合は変更なし
     | otherwise = ninja { elements = elem : elements ninja }
 
--- 装備を追加する関数（同じタイプの装備は置き換える）
+-- | 装備を追加する関数（同じタイプの装備は置き換える）
 equipItem :: Equipment -> Ninja -> Maybe Ninja
 equipItem equip ninja
     | not (validatePower (power equip)) = Nothing  -- パワーのバリデーション
-    | canEquip equip ninja = Just $ ninja { 
-        equipment = equip : filter (\e -> equipType e /= equipType equip) (equipment ninja) 
-      }
+    | canEquip equip ninja = Just $ replaceEquipment equip ninja
     | otherwise = Nothing
+  where
+    replaceEquipment :: Equipment -> Ninja -> Ninja
+    replaceEquipment equip ninja = ninja { 
+        equipment = equip : filter (\e -> equipType e /= equipType equip) (equipment ninja) 
+    }
 
--- 装備可能かチェックする関数
+-- | 装備可能かチェックする関数
 canEquip :: Equipment -> Ninja -> Bool
 canEquip equip ninja = all checkRequirement (requirements equip)
   where
     checkRequirement (skill, reqLevel) =
         maybe False (>= reqLevel) (Map.lookup skill (skills ninja))
 
--- ランダムな忍術の属性を生成する関数（セーフなバージョン）
+-- -----------------------------------------------------------------------------
+-- 属性と装備品の生成関数
+-- -----------------------------------------------------------------------------
+
+-- | ランダムな忍術の属性を生成する関数
 randomElement :: IO Element
 randomElement = do
     let elements = [minBound..maxBound] :: [Element]
     index <- randomRIO (0, length elements - 1)
     return $ elements !! index
 
--- 安全なランダムな属性の生成（例外処理付き）
+-- | 安全なランダムな属性の生成（例外処理付き）
 safeRandomElement :: IO (Maybe Element)
 safeRandomElement = do
     result <- try randomElement :: IO (Either IOError Element)
     case result of
         Left _ -> return Nothing
         Right element -> return (Just element)
-  where
-    try :: IO a -> IO (Either IOError a)
-    try = Control.Exception.try
 
--- 基本的な装備品を作成する関数（バリデーション付き）
+-- | 基本的な装備品を作成する関数（バリデーション付き）
 createBasicEquipment :: String -> EquipmentType -> Int -> Maybe Equipment
 createBasicEquipment name eType pwr
     | not (validateName name) = Nothing
@@ -143,30 +195,42 @@ createBasicEquipment name eType pwr
         requirements = []
     }
 
--- 上級装備品を作成する関数（バリデーション付き）
+-- | 上級装備品を作成する関数（バリデーション付き）
 createAdvancedEquipment :: String -> EquipmentType -> Int -> [Requirement] -> Maybe Equipment
 createAdvancedEquipment name eType pwr reqs
     | not (validateName name) = Nothing
     | not (validatePower pwr) = Nothing
-    | not (all (\(_, level) -> level > 0 && level <= maxSkillLevel) reqs) = Nothing
+    | not (all validRequirement reqs) = Nothing
     | otherwise = Just Equipment {
         equipName = name,
         equipType = eType,
         power = pwr,
         requirements = reqs
     }
+  where
+    validRequirement (_, level) = level > 0 && level <= maxSkillLevel
 
--- テスト用の装備品を生成（安全なバージョン）
+-- -----------------------------------------------------------------------------
+-- サンプル装備品
+-- -----------------------------------------------------------------------------
+
+-- | 基本武器：クナイ
 kunai :: Maybe Equipment
 kunai = createBasicEquipment "Kunai" Weapon 5
 
+-- | 基本武器：手裏剣
 shuriken :: Maybe Equipment
 shuriken = createBasicEquipment "Shuriken" Weapon 3
 
+-- | 防具：忍者ベスト
 ninjaVest :: Maybe Equipment
 ninjaVest = createAdvancedEquipment "Ninja Vest" Armor 10 [("Ninjutsu", 2)]
 
--- 忍者の戦闘力を計算する関数
+-- -----------------------------------------------------------------------------
+-- ユーティリティ関数
+-- -----------------------------------------------------------------------------
+
+-- | 忍者の戦闘力を計算する関数
 calculatePower :: Ninja -> Int
 calculatePower ninja = baseStats + skillPower + equipPower + elementBonus
   where
@@ -175,20 +239,28 @@ calculatePower ninja = baseStats + skillPower + equipPower + elementBonus
     equipPower = sum $ map power $ equipment ninja
     elementBonus = length (nub $ elements ninja) * 15  -- 重複した属性は計算しない
 
--- 忍者の情報を文字列で表示する関数
+-- | 忍者の情報を文字列で表示する関数
 displayNinjaInfo :: Ninja -> String
 displayNinjaInfo ninja = unlines [
     "名前: " ++ ninjaName ninja,
     "レベル: " ++ show (level ninja) ++ "/" ++ show maxLevel,
     "チャクラ: " ++ show (chakra ninja) ++ "/" ++ show maxChakra,
     "体力: " ++ show (health ninja) ++ "/" ++ show maxHealth,
-    "技能: " ++ show (Map.toList $ skills ninja),
-    "属性: " ++ show (nub $ elements ninja),  -- 重複を除いて表示
-    "装備: " ++ show (map equipName $ equipment ninja),
+    "技能: " ++ showSkills (skills ninja),
+    "属性: " ++ showElements (elements ninja),
+    "装備: " ++ showEquipment (equipment ninja),
     "戦闘力: " ++ show (calculatePower ninja)
     ]
+  where
+    showSkills skills = show (Map.toList skills)
+    showElements elems = show (nub elems)  -- 重複を除いて表示
+    showEquipment equips = show (map equipName equips)
 
+-- -----------------------------------------------------------------------------
 -- サンプル使用例
+-- -----------------------------------------------------------------------------
+
+-- | サンプル忍者作成と強化の例
 exampleNinja :: IO ()
 exampleNinja = do
     -- 新しい忍者を作成
@@ -213,6 +285,3 @@ exampleNinja = do
             
             -- 情報表示
             putStrLn $ displayNinjaInfo equippedNaruto
-
--- エラー処理のためのインポート
-import Control.Exception (try)

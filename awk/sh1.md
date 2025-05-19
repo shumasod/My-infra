@@ -1,105 +1,178 @@
-`awk` は、テキストファイルの内容を解析し、パターンマッチングやテキストの加工を行うためのプログラム言語です。主に行と列に基づいたテキスト処理を行うためのツールであり、ログファイルやCSVファイルの処理に広く使われます。以下に、`awk` の基本知識を紹介します。
-
-### 基本構文
-
-`awk` スクリプトの基本構文は以下のようになります：
-
-```sh
-awk 'pattern { action }' input-file
-```
-
-- `pattern`: 行を選択するための条件式。省略すると、すべての行に対して `action` が適用されます。
-- `action`: パターンに一致する行に対して行う処理。省略すると、`print $0`（行全体を表示）がデフォルトの動作となります。
-
-### フィールドとレコード
-
-- **レコード**: 通常、1行が1レコードと見なされます。`NR` は現在の行番号を示します。
-- **フィールド**: レコードはフィールド（列）に分割されます。デフォルトのフィールド区切りは空白文字（スペースやタブ）です。`$1`, `$2`, `$3`, ... のようにアクセスします。
-
-### オプション
-
-- `-F`：フィールド区切り文字を指定します。
-- `-v`：変数を `awk` スクリプトに渡します。
-
-### 内部変数
-
-- `NR`: 現在のレコード番号（行番号）。
-- `NF`: 現在のレコードのフィールド数（列数）。
-- `$0`: 現在のレコード全体。
-- `$1`, `$2`, ...: 現在のレコードの各フィールド。
-
-### 基本例
-
-#### 1. ファイル全体を表示
-
-```sh
-awk '{ print $0 }' filename
-```
-
-これは、ファイルのすべての行を表示します。
-
-#### 2. 特定のフィールドを表示
-
-```sh
-awk '{ print $1, $3 }' filename
-```
-
-これは、各行の1列目と3列目を表示します。
-
-#### 3. フィールド区切りを変更
-
-```sh
-awk -F, '{ print $1, $2 }' filename.csv
-```
-
-これは、カンマ区切りのCSVファイルの1列目と2列目を表示します。
-
-#### 4. 条件に一致する行を表示
-
-```sh
-awk '$3 > 100' filename
-```
-
-これは、3列目の値が100より大きい行を表示します。
-
-#### 5. 行番号を表示
-
-```sh
-awk '{ print NR, $0 }' filename
-```
-
-これは、各行の前に行番号を付けて表示します。
-
-#### 6. 合計を計算
-
-```sh
-awk '{ sum += $3 } END { print sum }' filename
-```
-
-これは、3列目の合計を計算して表示します。
-
-### パターンの種類
-
-- **正規表現**：行が特定の正規表現にマッチする場合。
-  ```sh
-  awk '/pattern/ { print $0 }' filename
-  ```
-- **範囲パターン**：開始パターンから終了パターンまでの範囲内の行。
-  ```sh
-  awk '/start/, /end/ { print $0 }' filename
-  ```
-
-### BEGIN と END ブロック
-
-- `BEGIN`：入力ファイルの処理を開始する前に実行されるアクション。
-- `END`：すべての入力が処理された後に実行されるアクション。
-
-```sh
-awk 'BEGIN { print "Start processing" }
-     { print $1 }
-     END { print "End processing" }' filename
-```
-
-このスクリプトは、処理の前に "Start processing" を表示し、各行の1列目を表示し、最後に "End processing" を表示します。
-
-`awk` は非常に強力なツールであり、これらの基本を組み合わせて複雑なテキスト処理を簡単に行うことができます。
+<?php
+/**
+ * AWKコマンドユーティリティクラス
+ * 
+ * PHPアプリケーションからAWKコマンドを実行するためのラッパークラス
+ * 
+ * @author Claude
+ * @version 1.0.0
+ */
+class AwkUtil
+{
+    /**
+     * AWKコマンドを実行する
+     *
+     * @param string $script AWKスクリプト
+     * @param string $filename 処理対象のファイル名
+     * @param array $options 追加オプション
+     * @return string 実行結果
+     * @throws RuntimeException コマンド実行エラー時
+     */
+    public static function execute(string $script, string $filename, array $options = []): string
+    {
+        // 基本コマンドの構築
+        $command = 'awk ';
+        
+        // オプションの処理
+        if (isset($options['fieldSeparator'])) {
+            $command .= '-F' . escapeshellarg($options['fieldSeparator']) . ' ';
+        }
+        
+        // 変数の処理
+        if (isset($options['variables']) && is_array($options['variables'])) {
+            foreach ($options['variables'] as $name => $value) {
+                $command .= '-v ' . escapeshellarg($name) . '=' . escapeshellarg($value) . ' ';
+            }
+        }
+        
+        // スクリプトの追加
+        $command .= escapeshellarg($script) . ' ';
+        
+        // ファイル名の追加
+        $command .= escapeshellarg($filename);
+        
+        // コマンドの実行
+        $output = [];
+        $returnVar = 0;
+        exec($command, $output, $returnVar);
+        
+        // エラーチェック
+        if ($returnVar !== 0) {
+            throw new RuntimeException('AWKコマンドの実行中にエラーが発生しました: ' . implode("\n", $output));
+        }
+        
+        return implode("\n", $output);
+    }
+    
+    /**
+     * CSVファイルの特定列を抽出する
+     *
+     * @param string $filename CSVファイル名
+     * @param array $columns 抽出する列番号の配列（1から始まる）
+     * @param string $delimiter 区切り文字（デフォルトはカンマ）
+     * @param bool $hasHeader ヘッダー行を含むかどうか
+     * @return string 実行結果
+     */
+    public static function extractCsvColumns(string $filename, array $columns, string $delimiter = ',', bool $hasHeader = true): string
+    {
+        // 列番号の文字列を構築
+        $columnsStr = implode(', ', array_map(function($col) {
+            return '$' . $col;
+        }, $columns));
+        
+        // AWKスクリプトの構築
+        $script = 'BEGIN { OFS="' . $delimiter . '" } ';
+        
+        // ヘッダー行の処理
+        if ($hasHeader) {
+            $script .= 'NR == 1 { print ' . $columnsStr . ' } ';
+        }
+        
+        // データ行の処理
+        $script .= ($hasHeader ? 'NR > 1' : '') . ' { print ' . $columnsStr . ' }';
+        
+        // コマンドの実行
+        return self::execute($script, $filename, [
+            'fieldSeparator' => $delimiter
+        ]);
+    }
+    
+    /**
+     * ログファイルから特定のパターンに一致する行を抽出する
+     *
+     * @param string $filename ログファイル名
+     * @param string $pattern 検索パターン
+     * @return string 実行結果
+     */
+    public static function grepFromLog(string $filename, string $pattern): string
+    {
+        // AWKスクリプトの構築
+        $script = '/' . str_replace('/', '\\/', $pattern) . '/ { print $0 }';
+        
+        // コマンドの実行
+        return self::execute($script, $filename);
+    }
+    
+    /**
+     * ログファイルから条件に一致する行を集計する
+     *
+     * @param string $filename ログファイル名
+     * @param int $columnIndex 集計対象の列インデックス（1から始まる）
+     * @param string $condition 集計条件（AWK形式）
+     * @return string 実行結果
+     */
+    public static function aggregateLog(string $filename, int $columnIndex, string $condition = ''): string
+    {
+        // 条件の追加
+        $conditionStr = $condition ? $condition . ' ' : '';
+        
+        // AWKスクリプトの構築
+        $script = 'BEGIN { print "値,出現回数" } ' .
+                  $conditionStr . '{ count[$' . $columnIndex . ']++ } ' .
+                  'END { for (val in count) print val "," count[val] }';
+        
+        // コマンドの実行
+        return self::execute($script, $filename);
+    }
+    
+    /**
+     * CSVファイルの列の合計値を計算する
+     *
+     * @param string $filename CSVファイル名
+     * @param int $columnIndex 計算対象の列インデックス（1から始まる）
+     * @param bool $hasHeader ヘッダー行を含むかどうか
+     * @return float 合計値
+     */
+    public static function sumCsvColumn(string $filename, int $columnIndex, bool $hasHeader = true): float
+    {
+        // AWKスクリプトの構築
+        $script = 'BEGIN { sum = 0 } ' .
+                  ($hasHeader ? 'NR > 1 ' : '') . '{ sum += $' . $columnIndex . ' } ' .
+                  'END { print sum }';
+        
+        // コマンドの実行
+        $result = self::execute($script, $filename, [
+            'fieldSeparator' => ','
+        ]);
+        
+        return (float)$result;
+    }
+    
+    /**
+     * テキストファイルの行数を数える
+     *
+     * @param string $filename ファイル名
+     * @return int 行数
+     */
+    public static function countLines(string $filename): int
+    {
+        // AWKスクリプトの構築
+        $script = 'END { print NR }';
+        
+        // コマンドの実行
+        $result = self::execute($script, $filename);
+        
+        return (int)$result;
+    }
+    
+    /**
+     * CSVファイルをHTML表に変換する
+     *
+     * @param string $filename CSVファイル名
+     * @param bool $hasHeader ヘッダー行を含むかどうか
+     * @return string HTML表
+     */
+    public static function csvToHtmlTable(string $filename, bool $hasHeader = true): string
+    {
+        // AWKスクリプトの構築
+        $script = 'BEGIN { print "<table class=\"table table-bordered\">" } ' .

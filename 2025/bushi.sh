@@ -18,8 +18,8 @@ fi
 CLEAR='\033[2J'
 RESET='\033[H'
 
-#
-# 侍の抜刀姿 (修正版)
+
+# 侍の抜刀姿 
 samurai_battle() {
     cat << "EOF"
       △ △    

@@ -18,25 +18,59 @@ fi
 CLEAR='\033[2J'
 RESET='\033[H'
 
-# 侍の立ち姿 (修正版)
-samurai_standing() {
-    cat << "EOF"
-        △ △
-       (｀へ´)
-     ξ ノ Ｙ ヽ
-    ξ  | |   |
-      ／\| |  ｜
-     ｜  | |  ｜
-    ／＼ | |  ｜
-   ｜  ｜| |／｜
-   ｜  ｜L/ ＼|
-   ｜  ｜ \  ｜
-   ｜  ｜  \ ｜
-   し  し   ＼)
-EOF
-}
+#!/bin/bash
 
-# 侍の抜刀姿 (修正版)
+# 武士の抜刀姿 ASCII Art
+# Samurai Drawing Sword
+
+clear
+
+# カラー設定
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}"
+echo "========================================"
+echo "     武士の抜刀姿 - Samurai Iaido"
+echo "========================================"
+echo -e "${NC}"
+echo
+
+# 武士のASCIIアート
+echo -e "${WHITE}                    ___"
+echo -e "                   /   \\"
+echo -e "                  | ${YELLOW}o   o${WHITE} |"
+echo -e "                   \\  -  /"
+echo -e "                    \\___/"
+echo -e "                     |||"
+echo -e "              ${GREEN}┌─────┴┴┴─────┐${WHITE}"
+echo -e "              ${GREEN}│    髷 (まげ)   │${WHITE}"
+echo -e "              ${GREEN}└─────────────┘${WHITE}"
+echo -e "                     |||"
+echo -e "             ${BLUE}╔═══════╤═══════╗${WHITE}"
+echo -e "             ${BLUE}║       │       ║${WHITE}     ${RED}/"
+echo -e "             ${BLUE}║   着  │  物   ║${WHITE}    ${RED}/"
+echo -e "             ${BLUE}║       │       ║${WHITE}   ${RED}/"
+echo -e "             ${BLUE}╠═══════╪═══════╣${WHITE}  ${RED}/"
+echo -e "             ${BLUE}║       │    \\  ║${WHITE} ${RED}/"
+echo -e "             ${BLUE}║       │     \\ ║${WHITE}${RED}/"
+echo -e "             ${BLUE}║       │      \\║${WHITE}${RED}    ${YELLOW}═══════════${WHITE}"
+echo -e "             ${BLUE}╚═══════╧═══════╝${WHITE}     ${YELLOW}刀 (katana)${WHITE}"
+echo -e "                    / \\"
+echo -e "                   /   \\"
+echo -e "                  /     \\"
+echo -e "                 /       \\"
+echo -e "                /         \\"
+echo -e "               ${GREEN}=============${WHITE}"
+echo -e "              ${GREEN}草履 (zōri)${WHITE}"
+echo -e "${NC}"
+
+# 侍の抜刀姿 
 samurai_battle() {
     cat << "EOF"
       △ △    

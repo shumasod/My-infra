@@ -1,147 +1,254 @@
-#!/bin/bash
+#!/bin/ksh
 #
-# MySQL 自動監視・復旧スクリプト
-# 説明: MySQLのエラーログを監視し、クラッシュを検出して自動的に復旧を試みるスクリプト
+# 名前: db_backup_to_s3.ksh
+# 説明: データベースの情報をCSVとしてS3にバックアップし、CloudWatchにログを送信するスクリプト
+# 使用方法: ./db_backup_to_s3.ksh [-d database] [-u user] [-p password] [-h host] [-b bucket] 
+#           [-P prefix] [-r region] [-g log-group] [-s log-stream] [-v]
+#   -d: データベース名 (必須)
+#   -u: データベースユーザー名 (デフォルト: root)
+#   -p: データベースパスワード
+#   -h: データベースホスト (デフォルト: localhost)
+#   -b: S3バケット名 (必須)
+#   -P: S3プレフィックス/パス (デフォルト: backups/db)
+#   -r: AWSリージョン (デフォルト: ap-northeast-1)
+#   -g: CloudWatch Logsのロググループ名 (デフォルト: /db/backup)
+#   -s: CloudWatch Logsのログストリーム名 (デフォルト: YYYYMMDD-HHMMSS形式)
+#   -v: 詳細モードを有効にする
 #
 
-# 設定
-MYSQL_USER="your_mysql_user"
-MYSQL_PASSWORD="your_mysql_password"
-MYSQL_DATA_DIR="/var/lib/mysql"
-MYSQL_ERROR_LOG="/var/log/mysql/error.log"
-MYSQL_CONFIG_FILE="/etc/mysql/my.cnf"
-LOG_FILE="/var/log/mysql_recovery.log"
-
-# 必要なコマンドの存在を確認
-for cmd in mysql mysqlcheck systemctl grep tail; do
-    if ! command -v $cmd &> /dev/null; then
-        echo "エラー: $cmd コマンドが見つかりません。インストールしてください。" | tee -a "$LOG_FILE"
-        exit 1
+# エラーハンドリング関数
+error_exit() {
+    local message="$1"
+    print -u2 "エラー: $message"
+    
+    # CloudWatchにエラーログを送信
+    if [[ $cw_logs_enabled -eq 1 ]]; then
+        send_to_cloudwatch "ERROR" "$message"
     fi
-done
-
-# ログファイルの存在を確認
-if [ ! -f "$MYSQL_ERROR_LOG" ]; then
-    echo "エラー: MySQL エラーログ $MYSQL_ERROR_LOG が見つかりません。" | tee -a "$LOG_FILE"
+    
     exit 1
-fi
+}
 
-# 権限の確認
-if [ "$(id -u)" -ne 0 ]; then
-    echo "警告: このスクリプトはroot権限で実行することをお勧めします。" | tee -a "$LOG_FILE"
-fi
+# CloudWatchにログを送信する関数
+send_to_cloudwatch() {
+    local log_level="$1"
+    local message="$2"
+    local timestamp=$(date +%s000) # ミリ秒単位のUNIXタイムスタンプ
+    
+    if [[ $cw_logs_enabled -eq 1 ]]; then
+        # CloudWatchのログイベントを作成
+        aws logs put-log-events \
+            --log-group-name "$cw_log_group" \
+            --log-stream-name "$cw_log_stream" \
+            --log-events "timestamp=$timestamp,message=[$log_level] $message" \
+            --region "$aws_region" >/dev/null 2>&1
+        
+        # エラーが発生した場合でもスクリプト自体は続行
+        if [ $? -ne 0 ]; then
+            print -u2 "警告: CloudWatchへのログ送信に失敗しました: $message"
+        fi
+    fi
+}
 
-# ログ関数
-log_message() {
+# ログ出力関数
+log_msg() {
+    local message="$1"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] $1" | tee -a "$LOG_FILE"
-}
-
-# MySQL 状態確認関数
-check_mysql_status() {
-    if systemctl is-active --quiet mysql; then
-        return 0
-    else
-        return 1
+    
+    if [[ $verbose -eq 1 ]]; then
+        print "[$timestamp] $message"
+    fi
+    
+    # CloudWatchにログを送信
+    if [[ $cw_logs_enabled -eq 1 ]]; then
+        send_to_cloudwatch "INFO" "$message"
     fi
 }
 
-# MySQL 復旧関数
-recover_mysql() {
-    log_message "MySQLがクラッシュを検出: $1"
-    
-    # MySQL 停止（すでに停止している可能性もある）
-    log_message "MySQLサービスを停止します..."
-    systemctl stop mysql
-    sleep 5
-    
-    # InnoDB 復旧モードの設定
-    if [ -f "$MYSQL_CONFIG_FILE" ]; then
-        log_message "InnoDB 復旧モードを設定します..."
-        cp "$MYSQL_CONFIG_FILE" "$MYSQL_CONFIG_FILE.bak"
-        sed -i '/\[mysqld\]/a innodb_force_recovery=1' "$MYSQL_CONFIG_FILE"
-    fi
-    
-    # MySQL 再起動
-    log_message "MySQLサービスを再起動します..."
-    systemctl start mysql
-    sleep 10
-    
-    # MySQL 起動確認
-    if ! check_mysql_status; then
-        log_message "MySQLサービスの再起動に失敗しました。より強力な復旧モードを試みます..."
-        systemctl stop mysql
-        sleep 5
-        
-        # 復旧モードを強化
-        if [ -f "$MYSQL_CONFIG_FILE" ]; then
-            sed -i 's/innodb_force_recovery=1/innodb_force_recovery=4/' "$MYSQL_CONFIG_FILE"
-        fi
-        
-        systemctl start mysql
-        sleep 10
-        
-        if ! check_mysql_status; then
-            log_message "重大なエラー: MySQLを復旧できませんでした。手動での対応が必要です。"
-            # 設定ファイルを元に戻す
-            if [ -f "$MYSQL_CONFIG_FILE.bak" ]; then
-                mv "$MYSQL_CONFIG_FILE.bak" "$MYSQL_CONFIG_FILE"
-            fi
-            exit 1
-        fi
-    fi
-    
-    # データベースの修復
-    log_message "データベースのチェックと修復を開始します..."
-    
-    # 安全な方法でパスワードを渡す
-    MYSQL_PWD="$MYSQL_PASSWORD" mysqlcheck -u"$MYSQL_USER" --all-databases --auto-repair --optimize 2>&1 | tee -a "$LOG_FILE"
-    
-    check_result=$?
-    if [ $check_result -ne 0 ]; then
-        log_message "データベースの修復中にエラーが発生しました（コード: $check_result）"
-    else
-        log_message "データベースの修復が完了しました。"
-    fi
-    
-    # 設定ファイルを元に戻す
-    if [ -f "$MYSQL_CONFIG_FILE.bak" ]; then
-        log_message "MySQL設定を復元します..."
-        mv "$MYSQL_CONFIG_FILE.bak" "$MYSQL_CONFIG_FILE"
-        systemctl restart mysql
-        sleep 5
-    fi
-    
-    # MySQLの状態を最終確認
-    if check_mysql_status; then
-        log_message "MySQLの復旧が完了しました。データベースは正常に動作しています。"
-    else
-        log_message "警告: MySQLは起動していますが、安定性を確認してください。"
-    fi
+# 使用方法を表示
+usage() {
+    cat <<EOF
+使用方法: $0 [-d database] [-u user] [-p password] [-h host] [-b bucket] 
+         [-P prefix] [-r region] [-g log-group] [-s log-stream] [-v]
+  -d: データベース名 (必須)
+  -u: データベースユーザー名 (デフォルト: root)
+  -p: データベースパスワード
+  -h: データベースホスト (デフォルト: localhost)
+  -b: S3バケット名 (必須)
+  -P: S3プレフィックス/パス (デフォルト: backups/db)
+  -r: AWSリージョン (デフォルト: ap-northeast-1)
+  -g: CloudWatch Logsのロググループ名 (デフォルト: /db/backup)
+  -s: CloudWatch Logsのログストリーム名 (デフォルト: YYYYMMDD-HHMMSS形式)
+  -v: 詳細モードを有効にする
+EOF
+    exit 1
 }
 
-# シグナルハンドラ
-trap 'echo "スクリプトを終了します..."; exit 0;' SIGINT SIGTERM
+# デフォルト値の設定
+db_user="root"
+db_host="localhost"
+s3_prefix="backups/db"
+aws_region="ap-northeast-1"
+cw_log_group="/db/backup"
+cw_log_stream="backup-$(date '+%Y%m%d-%H%M%S')"
+verbose=0
+temp_dir="/tmp/db_backup_$(date '+%Y%m%d%H%M%S')"
+cw_logs_enabled=1
 
-# メイン処理
-log_message "MySQL監視を開始します。エラーログ: $MYSQL_ERROR_LOG"
-
-# エラーパターン - 検出対象を拡張
-CRASH_PATTERNS=(
-    "mysqld got signal"
-    "Assertion failure"
-    "Fatal error"
-    "InnoDB: Assertion failure"
-    "segfault"
-)
-
-# エラーログの監視
-tail -F "$MYSQL_ERROR_LOG" | while read -r line; do
-    for pattern in "${CRASH_PATTERNS[@]}"; do
-        if echo "$line" | grep -q "$pattern"; then
-            # クラッシュ検出
-            recover_mysql "$line"
-            break
-        fi
-    done
+# コマンドライン引数の解析
+while getopts ":d:u:p:h:b:P:r:g:s:v" opt; do
+    case $opt in
+        d) db_name="$OPTARG" ;;
+        u) db_user="$OPTARG" ;;
+        p) db_pass="$OPTARG" ;;
+        h) db_host="$OPTARG" ;;
+        b) s3_bucket="$OPTARG" ;;
+        P) s3_prefix="$OPTARG" ;;
+        r) aws_region="$OPTARG" ;;
+        g) cw_log_group="$OPTARG" ;;
+        s) cw_log_stream="$OPTARG" ;;
+        v) verbose=1 ;;
+        \?) usage ;;
+    esac
 done
+
+# 必須パラメータのチェック
+[[ -z "$db_name" ]] && error_exit "データベース名(-d)は必須です"
+[[ -z "$s3_bucket" ]] && error_exit "S3バケット名(-b)は必須です"
+
+# パスワードが指定されていない場合は入力を求める
+if [[ -z "$db_pass" ]]; then
+    print -n "データベースパスワードを入力してください: "
+    read -s db_pass
+    print ""
+fi
+
+# 必要なツールの確認
+check_command() {
+    command -v "$1" >/dev/null 2>&1 || error_exit "$1 が見つかりません。インストールしてください。"
+}
+
+check_command mysql
+check_command mysqldump
+check_command aws
+check_command gzip
+
+# CloudWatch Logsのロググループとストリームの作成（存在しない場合）
+if [[ $cw_logs_enabled -eq 1 ]]; then
+    # ロググループが存在するかチェック
+    aws logs describe-log-groups --log-group-name-prefix "$cw_log_group" --region "$aws_region" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        print "CloudWatch Logsのロググループ $cw_log_group を作成しています..."
+        aws logs create-log-group --log-group-name "$cw_log_group" --region "$aws_region" >/dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            print -u2 "警告: CloudWatch Logsのロググループを作成できませんでした。CloudWatchへのログ記録は無効になります。"
+            cw_logs_enabled=0
+        fi
+    fi
+    
+    # ロググループが作成されていればログストリームを作成
+    if [[ $cw_logs_enabled -eq 1 ]]; then
+        aws logs create-log-stream --log-group-name "$cw_log_group" --log-stream-name "$cw_log_stream" --region "$aws_region" >/dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            print -u2 "警告: CloudWatch Logsのログストリームを作成できませんでした。CloudWatchへのログ記録は無効になります。"
+            cw_logs_enabled=0
+        fi
+    fi
+fi
+
+# テンポラリディレクトリの作成
+mkdir -p "$temp_dir" || error_exit "テンポラリディレクトリ $temp_dir を作成できませんでした。"
+log_msg "テンポラリディレクトリ $temp_dir を作成しました。"
+
+# MySQL接続テスト
+log_msg "データベース接続をテストしています..."
+mysql -h "$db_host" -u "$db_user" -p"$db_pass" -e "use $db_name" >/dev/null 2>&1 || 
+    error_exit "データベース接続に失敗しました。認証情報を確認してください。"
+
+# テーブル一覧の取得
+log_msg "テーブル一覧を取得しています..."
+tables=$(mysql -h "$db_host" -u "$db_user" -p"$db_pass" -N -e "SHOW TABLES FROM $db_name" 2>/dev/null)
+[[ -z "$tables" ]] && error_exit "テーブルが見つかりません。データベース名を確認してください。"
+
+table_count=$(echo "$tables" | wc -l)
+log_msg "$table_count 個のテーブルを処理します。"
+
+# 各テーブルをCSVに変換
+current=0
+timestamp=$(date '+%Y%m%d_%H%M%S')
+backup_dir="${temp_dir}/${db_name}_${timestamp}"
+mkdir -p "$backup_dir" || error_exit "バックアップディレクトリ $backup_dir を作成できませんでした。"
+
+for table in $tables; do
+    current=$((current + 1))
+    log_msg "[$current/$table_count] テーブル '$table' をエクスポートしています..."
+    
+    # ヘッダー（列名）を取得
+    mysql -h "$db_host" -u "$db_user" -p"$db_pass" -N -e "SHOW COLUMNS FROM $db_name.$table" 2>/dev/null | 
+        awk '{print $1}' | tr '\n' ',' | sed 's/,$/\n/' > "${backup_dir}/${table}.csv"
+    
+    # データをCSVとしてエクスポート
+    mysql -h "$db_host" -u "$db_user" -p"$db_pass" -N -e "SELECT * FROM $db_name.$table INTO OUTFILE '/tmp/${table}_temp.csv' 
+        FIELDS TERMINATED BY ',' 
+        OPTIONALLY ENCLOSED BY '\"' 
+        LINES TERMINATED BY '\n'" 2>/dev/null
+    
+    # 一時ファイルがファイルシステムのアクセス権の関係で作成できない場合の代替方法
+    if [[ ! -f "/tmp/${table}_temp.csv" ]]; then
+        log_msg "代替方法でエクスポートしています..."
+        mysql -h "$db_host" -u "$db_user" -p"$db_pass" -N -e "SELECT * FROM $db_name.$table" 2>/dev/null | 
+            sed 's/\t/,/g' >> "${backup_dir}/${table}.csv"
+    else
+        # 一時ファイルの内容をバックアップディレクトリのCSVファイルに追加
+        cat "/tmp/${table}_temp.csv" >> "${backup_dir}/${table}.csv"
+        rm "/tmp/${table}_temp.csv"
+    fi
+    
+    log_msg "[$current/$table_count] テーブル '$table' のエクスポートが完了しました。"
+    
+    # 進捗をCloudWatchに記録
+    if [[ $cw_logs_enabled -eq 1 ]]; then
+        send_to_cloudwatch "PROGRESS" "テーブル処理進捗: $current/$table_count ($((current * 100 / table_count))%)"
+    fi
+done
+
+# CSVファイルを圧縮
+log_msg "CSVファイルを圧縮しています..."
+archive_name="${db_name}_${timestamp}.tar.gz"
+tar -czf "${temp_dir}/${archive_name}" -C "${temp_dir}" "$(basename "$backup_dir")" || 
+    error_exit "CSVファイルの圧縮に失敗しました。"
+
+# 圧縮ファイルのサイズを取得
+archive_size=$(du -h "${temp_dir}/${archive_name}" | cut -f1)
+log_msg "圧縮ファイルのサイズ: $archive_size"
+
+# S3にアップロード
+log_msg "S3にアップロードしています..."
+s3_path="s3://${s3_bucket}/${s3_prefix}/${archive_name}"
+
+# アップロード開始時間
+upload_start_time=$(date +%s)
+
+aws s3 cp "${temp_dir}/${archive_name}" "$s3_path" --region "$aws_region" || 
+    error_exit "S3へのアップロードに失敗しました。"
+
+# アップロード終了時間と所要時間の計算
+upload_end_time=$(date +%s)
+upload_duration=$((upload_end_time - upload_start_time))
+log_msg "S3へのアップロードが完了しました。所要時間: ${upload_duration}秒"
+
+# クリーンアップ
+log_msg "一時ファイルを削除しています..."
+rm -rf "$temp_dir"
+
+# 成功メッセージ
+success_message="データベース $db_name のバックアップが完了しました。バックアップファイル: $s3_path"
+log_msg "$success_message"
+
+# 最終ステータスをCloudWatchに記録
+if [[ $cw_logs_enabled -eq 1 ]]; then
+    send_to_cloudwatch "COMPLETED" "バックアップ完了: $db_name, ファイルサイズ: $archive_size, 所要時間: ${upload_duration}秒"
+fi
+
+print "$success_message"
+exit 0

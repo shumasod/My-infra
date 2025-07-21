@@ -1,0 +1,58 @@
+
+  // Luhnアルゴリズム
+  let sum = 0;
+  let double = false;
+  
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits.charAt(i));
+    
+    if (double) {
+      digit *= 2;
+      if (digit > 9) {
+        digit -= 9;
+      }
+    }
+    
+    sum += digit;
+    double = !double;
+  }
+  
+  return sum % 10 === 0;
+}
+
+// 郵便番号のバリデーション (日本の郵便番号 例: 123-4567)
+function validatePostalCode(postalCode) {
+  const regex = /^\d{3}-\d{4}$/;
+  return regex.test(postalCode);
+}
+
+// フォームバリデーションの例
+function validateForm() {
+  const email = document.getElementById('email').value;
+  const phone = document.getElementById('phone').value;
+  const password = document.getElementById('password').value;
+  
+  let isValid = true;
+  let errorMessage = '';
+  
+  if (!validateEmail(email)) {
+    errorMessage += '有効なメールアドレスを入力してください。\n';
+    isValid = false;
+  }
+  
+  if (!validatePhoneNumber(phone)) {
+    errorMessage += '有効な電話番号を入力してください。(例: 03-1234-5678)\n';
+    isValid = false;
+  }
+  
+  if (!validatePassword(password)) {
+    errorMessage += 'パスワードは8文字以上で、大文字小文字と数字を含める必要があります。\n';
+    isValid = false;
+  }
+  
+  if (!isValid) {
+    alert(errorMessage);
+  }
+  
+  return isValid;
+}

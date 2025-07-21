@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Check if the terminal supports color
+
 if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
     GREEN='\033[0;32m'
     YELLOW='\033[1;33m'
     RED='\033[0;31m'
-    NC='\033[0m'    # No Color
+    NC='\033[0m'    
 else
     GREEN=''
     YELLOW=''

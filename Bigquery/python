@@ -1,44 +1,233 @@
 from airflow import DAG
+from airflow.models import Variable
+from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.operators.bigquery import BigQueryExecuteQueryOperator
 from airflow.providers.google.cloud.transfers.gcs_to_gcs import GCSToGCSOperator
-from datetime import datetime
+from airflow.utils.dates import days_ago
+from airflow.exceptions import AirflowException
+from datetime import datetime, timedelta
+import logging
+import json
 
+# DAGのデフォルト設定
 default_args = {
-    'owner': 'your-username',
-    'start_date': datetime(2023, 1, 1),
+    'owner': Variable.get('owner', default_var='airflow'),
+    'depends_on_past': False,
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'email': Variable.get('alert_email', default_var='admin@example.com'),
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+    'start_date': days_ago(1),
+    'execution_timeout': timedelta(hours=3),
 }
 
-with DAG('bq_org_migration', schedule_interval=None, default_args=default_args, catchup=False) as dag:
+# 設定パラメータ
+CONFIG = {
+    'source': {
+        'project': Variable.get('source_project_id'),
+        'dataset': Variable.get('source_dataset_id'),
+        'table': Variable.get('source_table_id'),
+        'gcs_bucket': Variable.get('source_gcs_bucket'),
+        'gcs_prefix': Variable.get('source_gcs_prefix', default_var='export'),
+    },
+    'destination': {
+        'project': Variable.get('dest_project_id'),
+        'dataset': Variable.get('dest_dataset_id'),
+        'table': Variable.get('dest_table_id'),
+        'gcs_bucket': Variable.get('dest_gcs_bucket'),
+    },
+    'export_format': Variable.get('export_format', default_var='PARQUET'),
+    'table_schema': Variable.get('table_schema', default_var=None),
+}
 
+def validate_config(**kwargs):
+    """設定パラメータの検証を行う"""
+    ti = kwargs['ti']
+    
+    required_keys = [
+        'source.project', 'source.dataset', 'source.table', 'source.gcs_bucket',
+        'destination.project', 'destination.dataset', 'destination.table', 'destination.gcs_bucket'
+    ]
+    
+    missing_keys = []
+    for key_path in required_keys:
+        parts = key_path.split('.')
+        current = CONFIG
+        for part in parts:
+            if part not in current or not current[part]:
+                missing_keys.append(key_path)
+                break
+            current = current[part]
+    
+    if missing_keys:
+        error_msg = f"必須のパラメータが設定されていません: {', '.join(missing_keys)}"
+        logging.error(error_msg)
+        raise AirflowException(error_msg)
+    
+    # 検証完了
+    logging.info("設定パラメータの検証が完了しました")
+    return CONFIG
+
+
+def create_export_query(**kwargs):
+    """エクスポートクエリを生成"""
+    ti = kwargs['ti']
+    config = ti.xcom_pull(task_ids='validate_config')
+    
+    export_format = config['export_format']
+    source_project = config['source']['project']
+    source_dataset = config['source']['dataset']
+    source_table = config['source']['table']
+    gcs_bucket = config['source']['gcs_bucket']
+    gcs_prefix = config['source']['gcs_prefix']
+    file_pattern = f"gs://{gcs_bucket}/{gcs_prefix}/{source_table}_*.{export_format.lower()}"
+    
+    # エクスポートクエリの生成
+    query = f"""
+    EXPORT DATA OPTIONS(
+        uri='{file_pattern}',
+        format='{export_format}',
+        compression='GZIP'
+    ) AS
+    SELECT * FROM `{source_project}.{source_dataset}.{source_table}`
+    """
+    
+    logging.info(f"エクスポートクエリを生成しました: {query}")
+    return query
+
+
+def create_import_query(**kwargs):
+    """インポートクエリを生成"""
+    ti = kwargs['ti']
+    config = ti.xcom_pull(task_ids='validate_config')
+    
+    export_format = config['export_format'].lower()
+    dest_project = config['destination']['project']
+    dest_dataset = config['destination']['dataset']
+    dest_table = config['destination']['table']
+    source_table = config['source']['table']
+    gcs_bucket = config['destination']['gcs_bucket']
+    gcs_prefix = config['source']['gcs_prefix']
+    file_pattern = f"gs://{gcs_bucket}/{gcs_prefix}/{source_table}_*.{export_format}"
+    
+    # テーブルスキーマの処理
+    schema_clause = ""
+    if config['table_schema']:
+        try:
+            schema = json.loads(config['table_schema'])
+            schema_fields = []
+            for field in schema:
+                field_type = field.get('type', 'STRING')
+                field_name = field.get('name')
+                field_mode = field.get('mode', 'NULLABLE')
+                if field_name:
+                    schema_fields.append(f"`{field_name}` {field_type} {field_mode}")
+            
+            if schema_fields:
+                schema_clause = f"(\n  {',\n  '.join(schema_fields)}\n)"
+        except json.JSONDecodeError:
+            logging.warning("テーブルスキーマのJSONが無効です。スキーマは自動検出されます。")
+    
+    # 適切なインポートクエリを生成
+    if export_format == 'parquet':
+        query = f"""
+        LOAD DATA INTO `{dest_project}.{dest_dataset}.{dest_table}` {schema_clause}
+        FROM FILES(
+            format='{export_format.upper()}',
+            uris=['{file_pattern}']
+        )
+        """
+    else:
+        # CSVやAVROなど他の形式のためのクエリ
+        query = f"""
+        LOAD DATA INTO `{dest_project}.{dest_dataset}.{dest_table}` {schema_clause}
+        FROM FILES(
+            format='{export_format.upper()}',
+            uris=['{file_pattern}']
+        )
+        """
+    
+    logging.info(f"インポートクエリを生成しました: {query}")
+    return query
+
+
+with DAG(
+    'bq_org_migration',
+    default_args=default_args,
+    description='BigQueryの組織間データ移行DAG',
+    schedule_interval=None,
+    catchup=False,
+    max_active_runs=1,
+    tags=['bigquery', 'migration'],
+) as dag:
+    
+    # 設定パラメータの検証
+    validate_config_task = PythonOperator(
+        task_id='validate_config',
+        python_callable=validate_config,
+        provide_context=True,
+    )
+    
+    # エクスポートクエリの生成
+    create_export_query_task = PythonOperator(
+        task_id='create_export_query',
+        python_callable=create_export_query,
+        provide_context=True,
+    )
+    
     # 元のデータセットをGCSにエクスポート
     export_dataset = BigQueryExecuteQueryOperator(
         task_id='export_dataset',
-        sql='''
-            EXPORT DATA OPTIONS(
-                uri='gs://your-bucket/export/*.parquet',
-                format='PARQUET'
-            ) AS
-            SELECT * FROM `your-project.your_dataset.your_table`
-        ''',
+        sql="{{ ti.xcom_pull(task_ids='create_export_query') }}",
+        use_legacy_sql=False,
+        location="asia-northeast1",  # リージョンを適宜変更
+        gcp_conn_id='source_google_cloud_default',
     )
     
-    # GCSバケットデータを新しい組織にコピー 
+    # GCSバケットデータを新しい組織にコピー
     copy_objects = GCSToGCSOperator(
         task_id='copy_objects',
-        source_bucket='your-bucket', 
-        destination_bucket='new-org-bucket',
-        source_object='export/*',
+        source_bucket="{{ ti.xcom_pull(task_ids='validate_config')['source']['gcs_bucket'] }}",
+        destination_bucket="{{ ti.xcom_pull(task_ids='validate_config')['destination']['gcs_bucket'] }}",
+        source_object="{{ ti.xcom_pull(task_ids='validate_config')['source']['gcs_prefix'] }}/*",
+        destination_object="{{ ti.xcom_pull(task_ids='validate_config')['source']['gcs_prefix'] }}/",
+        move_object=False,
+        replace=True,
+        gcp_conn_id='source_google_cloud_default',
+        dest_gcp_conn_id='dest_google_cloud_default',
+    )
+    
+    # インポートクエリの生成
+    create_import_query_task = PythonOperator(
+        task_id='create_import_query',
+        python_callable=create_import_query,
+        provide_context=True,
     )
     
     # 新しい組織のBigQueryにインポート
     load_data = BigQueryExecuteQueryOperator(
         task_id='load_data',
-        sql=f'''
-            LOAD DATA
-            OVERWRITE
-            INTO `new_project.new_dataset.new_table`
-            FROM FILES('{new_org_bucket}/export/*.parquet')
-        ''',
+        sql="{{ ti.xcom_pull(task_ids='create_import_query') }}",
+        use_legacy_sql=False,
+        location="asia-northeast1",  # リージョンを適宜変更
+        gcp_conn_id='dest_google_cloud_default',
     )
     
-    export_dataset >> copy_objects >> load_data
+    # データ移行の成功ログを記録
+    success_log = PythonOperator(
+        task_id='success_log',
+        python_callable=lambda **kwargs: logging.info(
+            f"BigQueryデータ移行が完了しました: "
+            f"{kwargs['ti'].xcom_pull(task_ids='validate_config')['source']['project']}."
+            f"{kwargs['ti'].xcom_pull(task_ids='validate_config')['source']['dataset']}."
+            f"{kwargs['ti'].xcom_pull(task_ids='validate_config')['source']['table']} -> "
+            f"{kwargs['ti'].xcom_pull(task_ids='validate_config')['destination']['project']}."
+            f"{kwargs['ti'].xcom_pull(task_ids='validate_config')['destination']['dataset']}."
+            f"{kwargs['ti'].xcom_pull(task_ids='validate_config')['destination']['table']}"
+        ),
+        provide_context=True,
+    )
+    
+    # タスクの依存関係を設定
+    validate_config_task >> create_export_query_task >> export_dataset >> copy_objects >> create_import_query_task >> load_data >> success_log

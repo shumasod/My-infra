@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Define the ASCII art frames
+# Define the アスキー定義
 frame1=(
 "                                            "
 "                                            "

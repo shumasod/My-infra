@@ -1,620 +1,193 @@
-# MongoDB データベース構築ガイド
+# ネットワーク監視ツール 技術解説書
 
-## 目次
-- [概要](#概要)
-- [前提条件](#前提条件)
-- [1. データベースの作成と使用](#1-データベースの作成と使用)
-- [2. コレクションの作成](#2-コレクションの作成)
-- [3. ドキュメントの挿入](#3-ドキュメントの挿入)
-- [4. ドキュメントの検索](#4-ドキュメントの検索)
-- [5. ドキュメントの更新](#5-ドキュメントの更新)
-- [6. ドキュメントの削除](#6-ドキュメントの削除)
-- [7. インデックスの作成と管理](#7-インデックスの作成と管理)
-- [8. スキーマバリデーション](#8-スキーマバリデーション)
-- [9. アグリゲーション](#9-アグリゲーション)
-- [10. トランザクション](#10-トランザクション)
-- [ベストプラクティス](#ベストプラクティス)
-- [参考リンク](#参考リンク)
+## 1. 概要
 
-## 概要
+このアプリケーションは、インターネット接続を定期的に監視し、接続が切断された場合に自動的に再接続を試みるツールです。主に以下の機能を提供します：
 
-本ガイドはMongoDB v6.0以降を対象とした、データベース構築のための基本的なクエリや操作方法を解説します。MongoDB Shell（`mongosh`）を使用した例を中心に説明します。
+- 複数のWebサイトに対する接続監視
+- 接続切れ検出時の自動再接続
+- OS固有のネットワーク再接続コマンド実行
+- 詳細なログ出力
+- コマンドラインからのカスタマイズ可能な設定
 
-## 前提条件
+## 2. 設計思想
 
-- MongoDB サーバー（v6.0以降）がインストールされていること
-- MongoDB Shell（`mongosh`）がインストールされていること
-- 基本的なJavaScript知識があること
+このツールは以下の設計原則に基づいて実装されています：
 
-## 1. データベースの作成と使用
+### 2.1 機能性と堅牢性
 
-MongoDBでは、データベースを明示的に作成する必要はありません。データベースに初めてデータを保存するときに自動的に作成されます。
+- **エラーハンドリング**: すべてのネットワーク操作と外部コマンド実行には適切な例外処理が施されています
+- **OS互換性**: Linux、macOS、Windowsの各OSに対応した再接続コマンドの提供
+- **冗長性**: 複数URLの監視による信頼性の向上
 
-```javascript
-// データベースの使用（存在しない場合は後でデータが保存された時点で作成される）
-use myDatabase
+### 2.2 使いやすさ
 
-// 現在使用中のデータベースを確認
-db.getName()
-// 出力: myDatabase
+- **詳細なログ出力**: タイムスタンプとログレベルを含む明確なログメッセージ
+- **コマンドライン設定**: 監視間隔、再試行回数、対象URLなどをカスタマイズ可能
+- **ヘルプ機能**: 使用方法の説明と例の提供
 
-// 全データベースのリストを表示
-show dbs
-// 出力:
-// admin       0.000GB
-// config      0.000GB
-// local       0.000GB
-// myDatabase  0.000GB (データが保存されている場合のみ表示)
+### 2.3 保守性
+
+- **モジュール化**: 論理的に関連する機能のグループ化
+- **関数単位の責務**: 各関数は明確に定義された単一の責務を持つ
+- **詳細なドキュメント**: 関数とデータ型に対する説明的なコメント
+
+## 3. システム構成
+
+### 3.1 コアデータ型
+
+```haskell
+-- アプリケーションの設定
+data Config = Config
+  { checkUrls  :: [String]  -- 監視対象のURL一覧
+  , interval   :: Int       -- 監視間隔（秒）
+  , maxRetries :: Int       -- 再接続の最大試行回数
+  , verbose    :: Bool      -- 詳細ログ出力フラグ
+  }
+
+-- ログレベル
+data LogLevel = Info | Warning | Error | Debug
 ```
 
-**注意点**:
-- データベース名は大文字小文字を区別します
-- データベース名に使用できない文字（`/`, `\`, `.`, `"`, `$`, `*`, `<`, `>`, `:`, `|`, `?`, スペース）があります
-- データベースにコレクションやドキュメントが保存されるまで、`show dbs`コマンドの出力に表示されません
+### 3.2 主要コンポーネント
 
-## 2. コレクションの作成
+1. **ログ管理システム**: 異なるレベルのログ出力を提供
+2. **ネットワーク接続チェック**: 指定されたURLへの接続テスト
+3. **ネットワーク再接続**: OS固有のコマンド実行による再接続
+4. **監視ループ**: 定期的な接続チェックと再接続の試行
+5. **コマンドライン処理**: 引数解析と設定の構築
 
-コレクションは、ドキュメントを格納するコンテナです。RDBMSのテーブルに相当します。
+## 4. 主要アルゴリズムとフロー
 
-```javascript
-// 明示的にコレクションを作成
-db.createCollection("users")
-// 出力: { "ok" : 1 }
+### 4.1 ネットワーク監視の基本フロー
 
-// 現在のデータベース内のコレクション一覧を表示
-show collections
-// 出力: users
-
-// コレクションの詳細情報を取得
-db.users.stats()
-// 出力: コレクションの統計情報
+```
+1. 設定された複数のURLに対して接続テストを実行
+2. 一つでも接続可能であれば、正常と判断
+3. すべてのURLに接続できない場合：
+   a. 再接続コマンドを実行
+   b. 一定時間待機
+   c. 再度接続テスト
+   d. 最大再試行回数まで繰り返す
 ```
 
-**暗黙的な作成**:
-最初のドキュメントを挿入するときに、指定したコレクションが存在しない場合は自動的に作成されます。
+### 4.2 再接続処理フロー
 
-```javascript
-// コレクションが存在しなくても自動的に作成される
-db.customers.insertOne({ name: "鈴木一郎", age: 28 })
-// 出力: {
-//   "acknowledged" : true,
-//   "insertedId" : ObjectId("...")
-// }
-
-show collections
-// 出力:
-// customers
-// users
+```
+1. OS種別の検出
+2. OS固有の再接続コマンドの決定
+3. コマンドの実行（シェル経由）
+4. 実行結果の分析
+5. 成功/失敗の判定と報告
 ```
 
-## 3. ドキュメントの挿入
+## 5. 実装の詳細
 
-MongoDBの基本的なデータ単位はドキュメントで、JSONライクなBSON（Binary JSON）形式で表現されます。
+### 5.1 ネットワーク接続チェック
 
-### 単一ドキュメントの挿入
-
-```javascript
-// 1件のドキュメントを挿入
-db.users.insertOne({
-    name: "田中太郎",
-    age: 30,
-    email: "tanaka@example.com",
-    address: {
-        city: "東京",
-        prefecture: "東京都",
-        postalCode: "100-0001"
-    },
-    tags: ["premium", "verified"],
-    createdAt: new Date()
-})
-// 出力: {
-//   "acknowledged" : true,
-//   "insertedId" : ObjectId("...")
-// }
+```haskell
+checkNetworkConnection :: String -> IO Bool
 ```
 
-### 複数ドキュメントの挿入
+この関数は、指定されたURLに対してHTTPリクエストを行い、応答のステータスコードを検証します。200-299の範囲のステータスコードは成功とみなされます。ネットワークエラーや例外は適切にハンドリングされ、接続失敗としてFalseを返します。
 
-```javascript
-// 複数のドキュメントを挿入
-db.users.insertMany([
-    {
-        name: "山田花子",
-        age: 25,
-        email: "yamada@example.com",
-        address: {
-            city: "大阪",
-            prefecture: "大阪府",
-            postalCode: "530-0001"
-        },
-        tags: ["new"],
-        createdAt: new Date()
-    },
-    {
-        name: "佐藤次郎",
-        age: 35,
-        email: "sato@example.com",
-        address: {
-            city: "名古屋",
-            prefecture: "愛知県",
-            postalCode: "460-0001"
-        },
-        tags: ["premium"],
-        createdAt: new Date()
-    }
-])
-// 出力: {
-//   "acknowledged" : true,
-//   "insertedIds" : [
-//     ObjectId("..."),
-//     ObjectId("...")
-//   ]
-// }
+### 5.2 ネットワーク再接続
+
+```haskell
+reconnectNetwork :: IO Bool
 ```
 
-**ドキュメントID**:
+この関数は、現在のOSに適したネットワーク再接続コマンドを取得し、それをシェル経由で実行します。コマンド実行の結果（標準出力と標準エラー出力）を分析し、再接続の成功/失敗を判定します。エラーハンドリングも組み込まれており、コマンド実行が例外で失敗した場合もサポートしています。
 
-`_id`フィールドを明示的に指定しない場合、MongoDBは自動的に一意の`ObjectId`を生成します。
+### 5.3 監視ループ
 
-```javascript
-// カスタムIDを指定
-db.users.insertOne({
-    _id: "user-123",
-    name: "高橋五郎",
-    email: "takahashi@example.com"
-})
-// 出力: {
-//   "acknowledged" : true,
-//   "insertedId" : "user-123"
-// }
+```haskell
+monitorNetwork :: Config -> Int -> IO ()
 ```
 
-**注意点**:
-- `insertMany()`では、デフォルトで一括挿入中にエラーが発生した場合、それ以前の挿入は維持されます。これを変更するには`ordered: false`オプションを設定します。
-- ドキュメントのサイズは最大16MBに制限されています。
+このループ関数は、設定された間隔で接続チェックを行い、必要に応じて再接続処理を実行します。再接続の試行回数を管理し、最大試行回数に達した場合は待機してカウントをリセットします。接続が正常な場合も、異常な場合も、適切なログメッセージを出力します。
 
-## 4. ドキュメントの検索
+## 6. 設定オプション
 
-### 基本的な検索
+アプリケーションは以下のコマンドライン引数をサポートしています：
 
-```javascript
-// コレクション内のすべてのドキュメントを検索
-db.users.find()
+| オプション | 説明 | デフォルト |
+|----------|------|-----------|
+| `--help`, `-h` | ヘルプメッセージを表示 | - |
+| `--interval=N` | 監視間隔を N 秒に設定 | 300（5分） |
+| `--retries=N` | 最大再試行回数を N に設定 | 3 |
+| `--verbose`, `-v` | 詳細ログを出力 | false |
+| `--url=URL` | チェックするURLを追加 | google.com, yahoo.co.jp |
 
-// 結果を見やすくフォーマット
-db.users.find().pretty()
+## 7. 実行例
 
-// 特定のフィールドの値で検索
-db.users.find({ name: "田中太郎" })
-
-// 条件に一致する最初の1件のみ取得
-db.users.findOne({ age: 30 })
+```bash
+$ ./network-monitor --interval=60 --retries=5 --url=https://example.com --verbose
+===============================================
+=          ネットワーク監視ツール            =
+===============================================
+2025-05-18 12:34:56 [INFO] ネットワーク監視を開始します (間隔: 60秒, 最大再試行回数: 5)
+2025-05-18 12:34:56 [INFO] 監視URL: ["https://example.com","https://www.google.com","https://www.yahoo.co.jp"]
+2025-05-18 12:34:56 [INFO] 初期接続チェックを実行しています...
+2025-05-18 12:34:56 [DEBUG] 接続確認中: https://example.com
+2025-05-18 12:34:57 [DEBUG] https://example.com への接続結果: 200
+2025-05-18 12:34:57 [DEBUG] 接続確認中: https://www.google.com
+2025-05-18 12:34:57 [DEBUG] https://www.google.com への接続結果: 200
+2025-05-18 12:34:57 [DEBUG] 接続確認中: https://www.yahoo.co.jp
+2025-05-18 12:34:58 [DEBUG] https://www.yahoo.co.jp への接続結果: 200
+2025-05-18 12:34:58 [DEBUG] https://example.com: 接続OK
+2025-05-18 12:34:58 [DEBUG] https://www.google.com: 接続OK
+2025-05-18 12:34:58 [DEBUG] https://www.yahoo.co.jp: 接続OK
+2025-05-18 12:34:58 [INFO] 初期接続チェックに成功しました。
+2025-05-18 12:34:58 [INFO] 監視ループを開始します...
+2025-05-18 12:34:58 [INFO] ネットワーク接続が正常です
+...
 ```
 
-### クエリオペレータ
-
-```javascript
-// 比較オペレータ
-db.users.find({ age: { $gt: 25 } })  // 25歳より上
-db.users.find({ age: { $gte: 25 } }) // 25歳以上
-db.users.find({ age: { $lt: 35 } })  // 35歳未満
-db.users.find({ age: { $lte: 35 } }) // 35歳以下
-db.users.find({ age: { $ne: 30 } })  // 30歳ではない
-db.users.find({ age: { $in: [25, 30, 35] } }) // 25, 30, 35歳のいずれか
-
-// 論理オペレータ
-db.users.find({ $and: [{ age: { $gt: 25 } }, { age: { $lt: 35 } }] }) // 25歳超かつ35歳未満
-db.users.find({ $or: [{ age: 25 }, { age: 35 }] }) // 25歳または35歳
-
-// 正規表現を使用した検索
-db.users.find({ name: /^田/ }) // '田'で始まる名前
-
-// ネストされたフィールドの検索
-db.users.find({ "address.city": "東京" })
-
-// 配列内の要素で検索
-db.users.find({ tags: "premium" })
-
-// 存在チェック
-db.users.find({ address: { $exists: true } }) // addressフィールドが存在するドキュメント
-```
-
-### プロジェクション（返却フィールドの制限）
-
-```javascript
-// 特定のフィールドのみを返す（1:表示, 0:非表示）
-db.users.find({}, { name: 1, email: 1, _id: 0 })
-
-// ネストされたフィールドの指定
-db.users.find({}, { name: 1, "address.city": 1 })
-```
-
-### カーソル操作
-
-```javascript
-// 結果のソート（1:昇順, -1:降順）
-db.users.find().sort({ age: 1 })
-
-// 結果の制限
-db.users.find().limit(2)
-
-// スキップ（ページネーションなどに利用）
-db.users.find().skip(1).limit(2)
-
-// 結果のカウント
-db.users.countDocuments({ age: { $gt: 30 } })
-```
-
-## 5. ドキュメントの更新
-
-### 単一ドキュメントの更新
-
-```javascript
-// フィールドの値を更新
-db.users.updateOne(
-    { name: "田中太郎" },
-    { $set: { age: 31, "address.city": "横浜" } }
-)
-// 出力: {
-//   "acknowledged" : true,
-//   "matchedCount" : 1,
-//   "modifiedCount" : 1
-// }
-
-// フィールドの値を増加
-db.users.updateOne(
-    { name: "田中太郎" },
-    { $inc: { age: 1 } } // 年齢を1増加
-)
-
-// フィールドの削除
-db.users.updateOne(
-    { name: "山田花子" },
-    { $unset: { tags: "" } }
-)
-
-// 存在しない場合は挿入（upsert）
-db.users.updateOne(
-    { name: "伊藤誠" },
-    { $set: { age: 40, email: "ito@example.com" } },
-    { upsert: true }
-)
-```
-
-### 複数ドキュメントの更新
-
-```javascript
-// 条件に一致するすべてのドキュメントを更新
-db.users.updateMany(
-    { age: { $lt: 30 } },
-    { $set: { status: "young" } }
-)
-// 出力: {
-//   "acknowledged" : true,
-//   "matchedCount" : x,
-//   "modifiedCount" : x
-// }
-```
-
-### 配列演算子を使った更新
-
-```javascript
-// 配列に要素を追加（重複なし）
-db.users.updateOne(
-    { name: "佐藤次郎" },
-    { $addToSet: { tags: "loyal" } }
-)
-
-// 配列に要素を追加（重複あり）
-db.users.updateOne(
-    { name: "佐藤次郎" },
-    { $push: { tags: "returning" } }
-)
-
-// 配列から要素を削除
-db.users.updateOne(
-    { name: "佐藤次郎" },
-    { $pull: { tags: "premium" } }
-)
-```
-
-### ドキュメントの置換
-
-```javascript
-// ドキュメント全体を置換（_idは維持）
-db.users.replaceOne(
-    { name: "高橋五郎" },
-    {
-        name: "高橋五郎",
-        age: 45,
-        email: "takahashi.new@example.com",
-        department: "営業部"
-    }
-)
-```
-
-## 6. ドキュメントの削除
-
-```javascript
-// 条件に一致する単一ドキュメントを削除
-db.users.deleteOne({ name: "山田花子" })
-// 出力: {
-//   "acknowledged" : true,
-//   "deletedCount" : 1
-// }
-
-// 条件に一致するすべてのドキュメントを削除
-db.users.deleteMany({ age: { $lt: 25 } })
-
-// コレクション内のすべてのドキュメントを削除
-db.users.deleteMany({})
-
-// コレクション自体を削除
-db.users.drop()
-// 出力: true
-```
-
-## 7. インデックスの作成と管理
-
-インデックスはクエリのパフォーマンスを向上させます。特に大量のデータを扱う場合は重要です。
-
-### インデックスの作成
-
-```javascript
-// 単一フィールドのインデックス（1:昇順, -1:降順）
-db.users.createIndex({ email: 1 })
-// 出力: "email_1"
-
-// 複合インデックス
-db.users.createIndex({ name: 1, age: -1 })
-// 出力: "name_1_age_-1"
-
-// ユニークインデックス
-db.users.createIndex({ email: 1 }, { unique: true })
-
-// TTL（Time To Live）インデックス - 指定時間経過後にドキュメントを自動削除
-db.sessions.createIndex({ lastAccessed: 1 }, { expireAfterSeconds: 3600 })
-
-// テキストインデックス - 全文検索用
-db.articles.createIndex({ content: "text" })
-
-// ジオスペーシャルインデックス - 位置情報クエリ用
-db.places.createIndex({ location: "2dsphere" })
-```
-
-### インデックスの管理
-
-```javascript
-// コレクションのインデックス一覧を表示
-db.users.getIndexes()
-
-// インデックスの削除
-db.users.dropIndex("email_1")
-
-// すべてのインデックスを削除（_id インデックスは除く）
-db.users.dropIndexes()
-
-// インデックスの使用状況を確認
-db.users.find({ email: "tanaka@example.com" }).explain("executionStats")
-```
-
-## 8. スキーマバリデーション
-
-MongoDBはスキーマレスですが、バリデーションルールを設定することでデータの整合性を確保できます。
-
-```javascript
-// バリデーションルールを持つコレクションを作成
-db.createCollection("products", {
-    validator: {
-        $jsonSchema: {
-            bsonType: "object",
-            required: ["name", "price", "category"],
-            properties: {
-                name: {
-                    bsonType: "string",
-                    description: "商品名 - 必須項目、文字列"
-                },
-                price: {
-                    bsonType: "number",
-                    minimum: 0,
-                    description: "価格 - 必須項目、0以上の数値"
-                },
-                category: {
-                    enum: ["電子機器", "家具", "文房具", "食品", "衣類"],
-                    description: "カテゴリ - 必須項目、指定された値のいずれか"
-                },
-                description: {
-                    bsonType: "string",
-                    description: "商品説明 - 文字列（オプション）"
-                },
-                tags: {
-                    bsonType: "array",
-                    items: {
-                        bsonType: "string"
-                    },
-                    description: "タグ - 文字列の配列（オプション）"
-                },
-                stock: {
-                    bsonType: "object",
-                    required: ["quantity"],
-                    properties: {
-                        quantity: {
-                            bsonType: "int",
-                            minimum: 0,
-                            description: "在庫数 - 整数、0以上"
-                        },
-                        warehouse: {
-                            bsonType: "string",
-                            description: "倉庫の場所（オプション）"
-                        }
-                    }
-                }
-            }
-        }
-    },
-    validationLevel: "strict",  // strict（すべてのドキュメント）または moderate（更新のみ）
-    validationAction: "error"   // error（拒否）または warn（警告のみ）
-})
-```
-
-既存のコレクションにバリデーションを追加する場合：
-
-```javascript
-db.runCommand({
-    collMod: "users",
-    validator: {
-        $jsonSchema: {
-            bsonType: "object",
-            required: ["name", "email"],
-            properties: {
-                name: {
-                    bsonType: "string"
-                },
-                email: {
-                    bsonType: "string",
-                    pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
-                },
-                age: {
-                    bsonType: "int",
-                    minimum: 0,
-                    maximum: 120
-                }
-            }
-        }
-    },
-    validationLevel: "moderate",
-    validationAction: "warn"
-})
-```
-
-## 9. アグリゲーション
-
-アグリゲーションフレームワークを使用すると、ドキュメントの変換や集計が可能になります。
-
-```javascript
-// 年齢ごとのユーザー数をカウント
-db.users.aggregate([
-    { $group: { _id: "$age", count: { $sum: 1 } } },
-    { $sort: { _id: 1 } }
-])
-
-// 都市ごとのユーザー平均年齢を集計
-db.users.aggregate([
-    { $match: { "address.city": { $exists: true } } },
-    { $group: {
-        _id: "$address.city",
-        averageAge: { $avg: "$age" },
-        count: { $sum: 1 }
-    }},
-    { $sort: { averageAge: -1 } }
-])
-
-// $lookupを使用したJOIN操作
-db.orders.aggregate([
-    { $match: { status: "complete" } },
-    { $lookup: {
-        from: "users",
-        localField: "userId",
-        foreignField: "_id",
-        as: "userDetails"
-    }},
-    { $unwind: "$userDetails" },
-    { $project: {
-        orderId: 1,
-        orderDate: 1,
-        customerName: "$userDetails.name",
-        totalAmount: 1
-    }}
-])
-
-// 月ごとの売上集計
-db.sales.aggregate([
-    { $match: { date: { $gte: new Date("2023-01-01"), $lt: new Date("2024-01-01") } } },
-    { $addFields: {
-        month: { $month: "$date" },
-        year: { $year: "$date" }
-    }},
-    { $group: {
-        _id: { year: "$year", month: "$month" },
-        totalSales: { $sum: "$amount" },
-        count: { $sum: 1 }
-    }},
-    { $sort: { "_id.year": 1, "_id.month": 1 } }
-])
-```
-
-## 10. トランザクション
-
-MongoDB 4.0以降ではマルチドキュメントトランザクションがサポートされています（レプリカセット環境が必要）。
-
-```javascript
-// セッションの開始
-const session = db.getMongo().startSession()
-session.startTransaction()
-
-try {
-    const usersCollection = session.getDatabase("myDatabase").users
-    const ordersCollection = session.getDatabase("myDatabase").orders
-    
-    // 口座残高の更新
-    usersCollection.updateOne(
-        { _id: "user123" },
-        { $inc: { balance: -100 } }
-    )
-    
-    // 注文の作成
-    ordersCollection.insertOne({
-        userId: "user123",
-        product: "Laptop",
-        price: 100,
-        orderDate: new Date()
-    })
-    
-    // トランザクションのコミット
-    session.commitTransaction()
-    console.log("トランザクションが成功しました")
-} catch (error) {
-    // エラー発生時はロールバック
-    session.abortTransaction()
-    console.error("トランザクションがロールバックされました:", error)
-} finally {
-    // セッションを終了
-    session.endSession()
-}
-```
-
-## ベストプラクティス
-
-### 1. データモデリング
-
-- **埋め込み vs 参照**: 一対多の関係では、「多」側が少数の場合は埋め込み、多数の場合は参照を使用
-- **スキーマの設計**: アクセスパターンに基づいてスキーマを設計
-- **非正規化**: 頻繁に一緒に読み取られるデータを非正規化して、JOINを減らす
-
-### 2. インデックス
-
-- クエリパターンに基づいてインデックスを作成
-- 複合インデックスを使用する場合は、等価比較（`{ field: "value" }`）を先に配置
-- 使用していないインデックスを定期的に確認し削除
-- インデックスの数が多すぎると挿入/更新パフォーマンスに影響するため注意
-
-### 3. クエリとパフォーマンス
-
-- 大規模なドキュメントセットを扱う場合はページネーションを使用（`.skip().limit()`）
-- 複雑なクエリはアグリゲーションパイプラインを活用
-- `.explain()`を使用してクエリプランを分析
-- 射影（プロジェクション）を使用して必要なフィールドのみを取得
-
-### 4. 運用
-
-- レプリカセットを使用して高可用性を確保
-- 定期的なバックアップを実施
-- 監視とアラートを設定（接続数、操作レイテンシなど）
-- クエリのロギングとプロファイリングを活用してボトルネックを特定
-
-## 参考リンク
-
-- [MongoDB 公式ドキュメント](https://docs.mongodb.com/)
-- [MongoDB 大学（無料のオンラインコース）](https://university.mongodb.com/)
-- [MongoDB Atlas（クラウドサービス）](https://www.mongodb.com/cloud/atlas)
-- [MongoDB コンパス（GUIツール）](https://www.mongodb.com/products/compass)
+## 8. エラーハンドリング
+
+このアプリケーションは、以下のエラー状況に対処するための堅牢なエラーハンドリングを実装しています：
+
+1. **ネットワーク接続エラー**: 接続障害、タイムアウト、不正なレスポンスなど
+2. **コマンド実行エラー**: 権限不足、不正なコマンド、実行失敗など
+3. **入力検証エラー**: 無効なコマンドライン引数、不正な設定値など
+
+各エラー状況は適切にログに記録され、可能な場合は回復処理が実行されます。
+
+## 9. 拡張性
+
+システムは以下のような拡張が容易に行えるように設計されています：
+
+1. **新しいOS対応**: `getReconnectCommand`関数に新しいOSケースを追加
+2. **接続チェック方法の追加**: 新しい接続確認方法を実装して`checkAllConnections`に統合
+3. **設定オプションの拡張**: 新しいコマンドライン引数を`parseArgs`関数に追加
+4. **通知機能の追加**: 接続状態変化時のメール/SMS通知など
+5. **Web管理インターフェース**: 状態確認と設定変更用のWebインターフェース
+
+## 10. パフォーマンスと最適化
+
+システムは長時間稼働することを前提に設計されており、以下の点で最適化されています：
+
+1. **低リソース使用**: 監視間隔が長いため、CPU/メモリ使用が最小限
+2. **エラー回復**: 一時的なネットワーク障害から自動回復
+3. **スケーラビリティ**: 多数のURLを監視する場合も効率的に動作
+
+## 11. セキュリティの考慮事項
+
+1. **特権コマンド実行**: 一部のネットワーク再接続コマンドは特権（sudo）が必要
+2. **ネットワーク接続**: HTTPS経由でのセキュアな接続チェック
+3. **入力検証**: コマンドライン引数の厳格な検証によるインジェクション防止
+
+## 12. 将来の拡張可能性
+
+このツールは以下の方向に拡張することができます：
+
+1. **詳細なネットワーク診断**: ping、tracerouteなどの診断ツール統合
+2. **高度な再接続戦略**: 段階的な再接続試行（ソフト→ハードリセット）
+3. **接続品質モニタリング**: 速度とレイテンシの測定
+4. **データ収集と分析**: 接続統計の長期保存と分析
+5. **VPN管理**: VPN接続の監視と自動再接続
+
+## 13. まとめ
+
+このネットワーク監視ツールは、Haskellの型安全性と例外処理機能を活用して、信頼性の高いネットワーク接続監視ソリューションを提供します。複数URLの監視、OS固有の再接続処理、詳細なログ出力など、幅広い機能を備えながらも、シンプルなコマンドラインインターフェースで操作できます。エラーハンドリングと回復メカニズムを備えた設計により、長期間の安定稼働が可能です。

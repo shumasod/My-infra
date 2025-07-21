@@ -3,7 +3,7 @@ from google.cloud import bigquery
 from google.api_core import exceptions
 
 def create_table_and_load_data(project_id, dataset_id, table_name, schema, csv_file):
-    # BigQuery クライアントを初期化
+    # BigQuery クライアントを初期
     client = bigquery.Client(project=project_id)
 
     # テーブルIDを作成

@@ -53,22 +53,54 @@ return patterns[num] || patterns[1];
 const pattern = getDicePattern(number);
 
 return (
-  <div className={`inline-block border-4 ${bgColor} p-4 rounded-lg bg-gray-900 transition-all duration-100 ${
-    isAnimating ? 'animate-bounce transform rotate-12 scale-110 shadow-2xl' : ''
-  }`}>
-    <div className={`font-mono text-2xl leading-tight transition-transform duration-100 ${
-      isAnimating ? 'transform rotate-6' : ''
-    }`}>
-      {pattern.map((row, rowIndex) => (
-        <div key={rowIndex} className="flex justify-center space-x-2">
-          {row.map((cell, cellIndex) => (
-            <div key={cellIndex} className={`w-6 h-6 flex items-center justify-center ${color}`}>
-              {cell}
-            </div>
-          ))}
-        </div>
-      ))}
+  <div className="relative">
+    <div className={`inline-block border-4 ${bgColor} p-4 rounded-lg bg-gray-900 transition-all duration-150 ${
+      isAnimating 
+        ? 'animate-spin transform scale-125 shadow-2xl shadow-white/20 border-8' 
+        : 'hover:scale-105'
+    }`}
+    style={{
+      transform: isAnimating 
+        ? `rotateX(${Math.random() * 360}deg) rotateY(${Math.random() * 360}deg) rotateZ(${Math.random() * 360}deg) scale(1.3)` 
+        : 'none',
+      animation: isAnimating ? 'diceRoll 0.15s infinite linear' : 'none'
+    }}>
+      <div className={`font-mono text-2xl leading-tight transition-all duration-150 ${
+        isAnimating ? 'blur-sm' : ''
+      }`}>
+        {pattern.map((row, rowIndex) => (
+          <div key={rowIndex} className="flex justify-center space-x-2">
+            {row.map((cell, cellIndex) => (
+              <div key={cellIndex} className={`w-6 h-6 flex items-center justify-center ${color} ${
+                isAnimating ? 'animate-pulse' : ''
+              }`}>
+                {cell}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
+    
+    {/* 転がりエフェクト */}
+    {isAnimating && (
+      <>
+        <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-transparent via-white/10 to-transparent animate-ping"></div>
+        <div className="absolute -top-2 -left-2 w-4 h-4 bg-yellow-400 rounded-full animate-bounce opacity-70"></div>
+        <div className="absolute -bottom-2 -right-2 w-3 h-3 bg-red-400 rounded-full animate-bounce opacity-70" style={{animationDelay: '0.2s'}}></div>
+        <div className="absolute -top-2 -right-2 w-2 h-2 bg-blue-400 rounded-full animate-bounce opacity-70" style={{animationDelay: '0.4s'}}></div>
+      </>
+    )}
+    
+    <style jsx>{`
+      @keyframes diceRoll {
+        0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1.3); }
+        25% { transform: rotateX(90deg) rotateY(45deg) rotateZ(180deg) scale(1.4); }
+        50% { transform: rotateX(180deg) rotateY(90deg) rotateZ(270deg) scale(1.2); }
+        75% { transform: rotateX(270deg) rotateY(135deg) rotateZ(360deg) scale(1.5); }
+        100% { transform: rotateX(360deg) rotateY(180deg) rotateZ(180deg) scale(1.3); }
+      }
+    `}</style>
   </div>
 );
 ```
@@ -92,7 +124,7 @@ setTotalPlays(prev => prev + 1);
 const rollPlayerDice = () => {
 setIsRolling(true);
 let rollCount = 0;
-const maxRolls = 15; // アニメーション回数
+const maxRolls = 20; // アニメーション回数を増やしてよりリアルに
 
 ```
 const rollAnimation = setInterval(() => {
@@ -109,9 +141,9 @@ const rollAnimation = setInterval(() => {
     // 少し待ってから次の状態に移行
     setTimeout(() => {
       setGameState('computerRoll');
-    }, 800);
+    }, 1000);
   }
-}, 100); // 0.1秒間隔で更新
+}, 80); // 少し速くして滑らかに
 ```
 
 };
@@ -119,7 +151,7 @@ const rollAnimation = setInterval(() => {
 const rollComputerDice = () => {
 setIsRolling(true);
 let rollCount = 0;
-const maxRolls = 15; // アニメーション回数
+const maxRolls = 20; // アニメーション回数を増やしてよりリアルに
 
 ```
 const rollAnimation = setInterval(() => {
@@ -150,9 +182,9 @@ const rollAnimation = setInterval(() => {
     // 結果表示まで少し待つ
     setTimeout(() => {
       setGameState('result');
-    }, 800);
+    }, 1000);
   }
-}, 100); // 0.1秒間隔で更新
+}, 80); // 少し速くして滑らかに
 ```
 
 };
@@ -220,30 +252,37 @@ return (
     {gameState === 'playerRoll' && (
       <div className="text-center">
         <p className="text-yellow-400 mb-6 text-lg">
-          {isRolling ? 'サイコロを振っています...' : 'サイコロを振ります。準備はいいですか？'}
+          {isRolling ? '🎲 サイコロを激しく振っています... 🎲' : 'サイコロを振ります。準備はいいですか？'}
         </p>
         
-        <div className="mb-8">
-          <DiceDisplay 
-            number={isRolling ? rollingValue : Math.floor(Math.random() * 6) + 1} 
-            color={isRolling ? "text-blue-400" : "text-gray-500"} 
-            bgColor={isRolling ? "border-blue-400" : "border-gray-500"}
-            isAnimating={isRolling}
-          />
+        <div className="mb-8 flex justify-center">
+          <div className={`transition-all duration-300 ${isRolling ? 'transform scale-110' : ''}`}>
+            <DiceDisplay 
+              number={isRolling ? rollingValue : Math.floor(Math.random() * 6) + 1} 
+              color={isRolling ? "text-blue-400" : "text-gray-500"} 
+              bgColor={isRolling ? "border-blue-400" : "border-gray-500"}
+              isAnimating={isRolling}
+            />
+          </div>
         </div>
 
         {!isRolling && (
           <button 
             onClick={rollPlayerDice}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded text-lg animate-pulse"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded text-lg animate-pulse transform hover:scale-105 transition-all"
           >
-            あなたのサイコロを振る
+            🎲 あなたのサイコロを振る 🎲
           </button>
         )}
         
         {isRolling && (
-          <div className="text-blue-400 text-lg animate-pulse">
-            🎲 転がり中... 🎲
+          <div className="space-y-2">
+            <div className="text-blue-400 text-xl animate-pulse font-bold">
+              ガラガラガラ... 🌪️
+            </div>
+            <div className="text-sm text-blue-300 animate-bounce">
+              どの目が出るかな？
+            </div>
           </div>
         )}
       </div>
@@ -258,29 +297,36 @@ return (
         </div>
 
         <p className="text-red-400 mb-4 text-lg">
-          {isRolling ? 'コンピュータのサイコロを振っています...' : 'コンピュータのサイコロ:'}
+          {isRolling ? '🤖 コンピュータが激しくサイコロを振っています... 🎲' : 'コンピュータのサイコロ:'}
         </p>
-        <div className="mb-8">
-          <DiceDisplay 
-            number={isRolling ? rollingValue : Math.floor(Math.random() * 6) + 1} 
-            color={isRolling ? "text-red-400" : "text-gray-500"} 
-            bgColor={isRolling ? "border-red-400" : "border-gray-500"}
-            isAnimating={isRolling}
-          />
+        <div className="mb-8 flex justify-center">
+          <div className={`transition-all duration-300 ${isRolling ? 'transform scale-110' : ''}`}>
+            <DiceDisplay 
+              number={isRolling ? rollingValue : Math.floor(Math.random() * 6) + 1} 
+              color={isRolling ? "text-red-400" : "text-gray-500"} 
+              bgColor={isRolling ? "border-red-400" : "border-gray-500"}
+              isAnimating={isRolling}
+            />
+          </div>
         </div>
 
         {!isRolling && (
           <button 
             onClick={rollComputerDice}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded text-lg animate-pulse"
+            className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded text-lg animate-pulse transform hover:scale-105 transition-all"
           >
-            コンピュータのサイコロを振る
+            🤖 コンピュータのサイコロを振る 🎲
           </button>
         )}
         
         {isRolling && (
-          <div className="text-red-400 text-lg animate-pulse">
-            🤖 コンピュータが振っています... 🎲
+          <div className="space-y-2">
+            <div className="text-red-400 text-xl animate-pulse font-bold">
+              ウィーン... ガラガラガラ... ⚡
+            </div>
+            <div className="text-sm text-red-300 animate-bounce">
+              AIが計算中... でも運次第！
+            </div>
           </div>
         )}
       </div>

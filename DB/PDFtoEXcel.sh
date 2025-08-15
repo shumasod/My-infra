@@ -1,4 +1,4 @@
-#!/bin/ksh
+#!/bin/sh
 #
 # 名前: db_backup_to_s3.ksh
 # 説明: データベースの情報をCSVとしてS3にバックアップするスクリプト

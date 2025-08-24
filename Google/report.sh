@@ -6,7 +6,7 @@ DATE=$(date +"%Y-%m-%d")
 # レポートファイル名を設定するよ
 REPORT_FILE="report_${DATE}.txt"
 
-# レポートを生成
+# レポートを生成するんよ
 generate_report() {
     echo "日次レポート: ${DATE}" > ${REPORT_FILE}
     echo "-------------------" >> ${REPORT_FILE}

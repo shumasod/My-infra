@@ -20,7 +20,7 @@ generate_report() {
     echo "レポート終了" >> ${REPORT_FILE}
 }
 
-# メールを送信
+# メールを送信するんじゃけ
 send_email() {
     RECIPIENT="your-email@example.com"
     SUBJECT="日次レポート: ${DATE}"

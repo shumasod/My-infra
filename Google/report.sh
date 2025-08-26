@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# 日付を取得
+# 日付を取得するよ
 DATE=$(date +"%Y-%m-%d")
 
-# レポートファイル名を設定
+# レポートファイル名を設定するよ
 REPORT_FILE="report_${DATE}.txt"
 
-# レポートを生成
+# レポートを生成するんよ
 generate_report() {
     echo "日次レポート: ${DATE}" > ${REPORT_FILE}
     echo "-------------------" >> ${REPORT_FILE}
@@ -20,7 +20,7 @@ generate_report() {
     echo "レポート終了" >> ${REPORT_FILE}
 }
 
-# メールを送信
+# メールを送信するんじゃけ
 send_email() {
     RECIPIENT="your-email@example.com"
     SUBJECT="日次レポート: ${DATE}"

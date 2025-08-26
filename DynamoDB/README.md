@@ -1,380 +1,807 @@
-# DynamoDBテーブル設計とクエリパターン解説
+# DynamoDB 注文管理システム - 完全ガイド
 
-このドキュメントでは、注文管理システムを例に、DynamoDBのテーブル設計とクエリパターンについて解説します。各項目には、その役割や設計時の注意点、実装の際のポイントなどを補足しています。
+このドキュメントでは、AWS SDK v3とモダンなJavaScript実装を使用した、本格的な注文管理システムのDynamoDB設計と実装について詳しく解説します。
 
----
+## 目次
 
-## 1. テーブル基本設計
+1. [システム概要](#1-システム概要)
+1. [テーブル設計](#2-テーブル設計)
+1. [データモデリング](#3-データモデリング)
+1. [クエリパターン](#4-クエリパターン)
+1. [実装詳細](#5-実装詳細)
+1. [運用とモニタリング](#6-運用とモニタリング)
+1. [ベストプラクティス](#7-ベストプラクティス)
 
-テーブル設計の基本となる部分です。注文管理システムのユースケースに合わせたキー設計やインデックス設定の基本構造を示します。
+-----
 
-### 1.1 キー スキーマ
+## 1. システム概要
+
+### 1.1 主要機能
+
+- 注文の作成・更新・取得
+- ユーザー別注文履歴管理
+- ステータス別注文検索
+- 日付範囲での注文絞り込み
+- 統計情報とレポート生成
+- バッチ処理による一括操作
+
+### 1.2 技術スタック
+
+- **AWS SDK**: v3 (最新版)
+- **DynamoDB**: シングルテーブル設計
+- **Node.js**: ES2022+
+- **エラーハンドリング**: 指数バックオフ付きリトライ
+- **セキュリティ**: Point-in-Time Recovery, 暗号化
+
+### 1.3 主要な改善点
+
+- **堅牢なバリデーション**: 詳細なエラーメッセージと型チェック
+- **複数GSI設計**: 検索性能の最適化
+- **金額計算の精度**: 小数点誤差の回避
+- **包括的エラーハンドリング**: 本番環境対応
+- **統計機能**: ビジネス分析サポート
+
+-----
+
+## 2. テーブル設計
+
+### 2.1 基本テーブル構造
 
 ```javascript
-{
+const OrderTableDefinition = {
   TableName: 'Orders',
   KeySchema: [
-    { AttributeName: 'PK', KeyType: 'HASH' },  // パーティションキー
-    { AttributeName: 'SK', KeyType: 'RANGE' }  // ソートキー
+    { AttributeName: 'PK', KeyType: 'HASH' },   // ユーザーベースの分散
+    { AttributeName: 'SK', KeyType: 'RANGE' }   // 日付+注文ID でソート
+  ],
+  AttributeDefinitions: [
+    { AttributeName: 'PK', AttributeType: 'S' },      // USER#{userId}
+    { AttributeName: 'SK', AttributeType: 'S' },      // ORDER#{date}#{orderId}
+    { AttributeName: 'GSI1PK', AttributeType: 'S' },  // STATUS#{status}
+    { AttributeName: 'GSI1SK', AttributeType: 'S' },  // {date}#{orderId}
+    { AttributeName: 'GSI2PK', AttributeType: 'S' },  // DATE#{date}
+    { AttributeName: 'GSI2SK', AttributeType: 'S' }   // {status}#{orderId}
   ]
 }
 ```
 
-**補足説明：**
-- **パーティションキー (PK)：**  
-  データの分散や検索効率を決定する主要な識別子です。この例では、ユーザーごとにデータをまとめるために使用されます。
-- **ソートキー (SK)：**  
-  同じパーティション内でデータを時系列やその他の順序付け基準で整理するために利用します。ここでは注文日など、順序が重要な情報を扱うのに適しています。
+### 2.2 グローバルセカンダリインデックス (GSI)
 
-### 1.2 インデックス設定
-
-基本のテーブルに加え、効率的な検索や柔軟なクエリのためにインデックスを設計します。
-
-* **プライマリインデックス：**
-  - **PK (パーティションキー):** ユーザーID  
-    ユーザーごとの注文情報のグループ化に使用。
-  - **SK (ソートキー):** 注文日  
-    注文日を基準に並べ替え、履歴の取得や期間指定検索を容易にします。
-
-* **グローバルセカンダリインデックス (GSI1)：**
-  - **GSI1PK:** 注文ステータス  
-    注文の状態（例：COMPLETED, PENDINGなど）に基づく検索が可能となります。
-  - **GSI1SK:** 注文日  
-    ステータスごとの注文を、日付でソートすることで、期間指定のクエリにも対応できます。
-
-**補足説明：**
-- **インデックスの利点：**  
-  インデックスを追加することで、主テーブルの設計に影響を与えずに多様な検索パターンを実現できます。特にアクセス頻度の高いクエリ（例：注文ステータス別の検索など）に対して、専用のインデックスを設けるとパフォーマンスが向上します。
-
-### 1.3 アクセスパターン分析プロセス
-
-DynamoDBテーブル設計において最も重要なのは、アクセスパターンの理解とそれに基づいた設計です。以下の手順でアクセスパターンを分析します：
-
-1. **ビジネス要件の明確化**  
-   - 「ユーザーは自分の注文履歴を日付順に表示できる」
-   - 「管理者は特定のステータスの注文を一覧表示できる」
-   - 「特定期間の注文集計が必要」など
-
-2. **アクセスパターンの抽出**  
-   各要件から必要なデータアクセスパターンを特定します：
-   - ユーザーIDによる注文履歴検索（日付降順）
-   - 注文ステータス別の検索
-   - 日付範囲による検索
-
-3. **頻度と重要度の評価**  
-   各アクセスパターンの使用頻度と重要度を評価し、優先順位を決定します：
-   - 高頻度・高重要度：ユーザーの注文履歴検索（メインのユースケース）
-   - 中頻度・高重要度：ステータス別注文検索（運用管理）
-   - 低頻度・中重要度：期間別集計（レポート作成）
-
-4. **キー設計への反映**  
-   優先度の高いアクセスパターンをプライマリインデックスで、その他のパターンをGSIでサポートします。
-
----
-
-## 2. データモデリング例
-
-実際の注文アイテムのデータ構造例を示し、どのような属性を持たせるかを具体的に解説します。
-
-### 2.1 注文アイテムの構造
+#### GSI1: ステータス別検索用
 
 ```javascript
 {
-  PK: 'USER#123',           // ユーザーID
-  SK: 'ORDER#2024-01-01',    // 注文日
-  orderId: 'ORD-001',        // 注文固有ID
-  userId: '123',             // ユーザーID（冗長性のために保持する場合も）
-  orderDate: '2024-01-01',   // 注文日（検索・表示用）
-  status: 'COMPLETED',       // 注文状態（例：COMPLETED, PENDINGなど）
-  total: 5000,               // 注文合計金額
-  items: [
-    { productId: 'P1', quantity: 2, price: 1500 },
-    { productId: 'P2', quantity: 1, price: 2000 }
+  IndexName: 'GSI1-Status-Date',
+  KeySchema: [
+    { AttributeName: 'GSI1PK', KeyType: 'HASH' },   // STATUS#{status}
+    { AttributeName: 'GSI1SK', KeyType: 'RANGE' }   // {date}#{orderId}
   ],
-  GSI1PK: 'ORDER#COMPLETED', // GSI用：注文状態を含むキー
-  GSI1SK: '2024-01-01',      // GSI用：注文日（ソート用）
-  expirationTime: 1735689600 // TTL: 2025-01-01 00:00:00（Unix時間）
+  // 用途: 特定ステータスの注文を日付順で取得
+  // 例: 保留中の注文を古い順に処理
 }
 ```
 
-**補足説明：**
-- **冗長性:**  
-  主テーブルのキーと別に、検索に必要な属性（例：orderDateやstatus）を各項目としても保持することで、効率的なクエリが可能です。
-- **items配列:**  
-  複数の注文アイテムを含む場合は、ネストされたデータ構造を利用し、商品の詳細（productId、数量、単価）をまとめています。
-- **expirationTime属性:**  
-  TTL（Time To Live）機能のための属性。Unix時間形式で指定した時刻を過ぎると、DynamoDBが自動的にアイテムを削除します。
-
----
-
-## 3. 主要クエリパターン
-
-具体的なクエリ例を示し、どのようにデータを取得するかを説明します。
-
-### 3.1 ユーザーの注文履歴取得
+#### GSI2: 日付別検索用
 
 ```javascript
 {
-  TableName: 'Orders',
-  KeyConditionExpression: 'PK = :userId',
-  ExpressionAttributeValues: {
-    ':userId': 'USER#123'
+  IndexName: 'GSI2-Date-Status',
+  KeySchema: [
+    { AttributeName: 'GSI2PK', KeyType: 'HASH' },   // DATE#{date}
+    { AttributeName: 'GSI2SK', KeyType: 'RANGE' }   // {status}#{orderId}
+  ],
+  // 用途: 特定日の注文をステータス別に取得
+  // 例: 2024-03-08の注文を完了済み順に表示
+}
+```
+
+### 2.3 テーブル設定の強化
+
+```javascript
+{
+  BillingMode: 'PAY_PER_REQUEST',              // スケーラブルな料金体系
+  PointInTimeRecoverySpecification: {
+    PointInTimeRecoveryEnabled: true           // データ保護
   },
-  ScanIndexForward: false, // 降順に取得（最新の注文から表示）
-  ProjectionExpression: 'orderId, orderDate, status, total' // 必要な属性のみ取得
+  SSESpecification: {
+    SSEEnabled: true                           // 暗号化
+  },
+  Tags: [
+    { Key: 'Environment', Value: 'production' },
+    { Key: 'Project', Value: 'OrderManagement' },
+    { Key: 'CostCenter', Value: 'Engineering' }
+  ]
 }
 ```
 
-**補足説明：**
-- **ポイント:**  
-  ユーザーIDをパーティションキーに設定することで、該当ユーザーのすべての注文履歴を一度に取得できます。
-- **ScanIndexForward:**  
-  falseに設定することで、最新の注文から表示するよう降順にソートします。
-- **ProjectionExpression:**  
-  必要な属性のみを取得することで、データ転送量を削減し、コストとパフォーマンスを最適化します。
+-----
 
-### 3.2 期間指定での注文取得
+## 3. データモデリング
+
+### 3.1 注文アイテムの完全な構造
 
 ```javascript
 {
-  TableName: 'Orders',
-  KeyConditionExpression: 'PK = :userId AND SK BETWEEN :startDate AND :endDate',
-  ExpressionAttributeValues: {
-    ':userId': 'USER#123',
-    ':startDate': 'ORDER#2024-01-01',
-    ':endDate': 'ORDER#2024-12-31'
-  }
-}
-```
-
-**補足説明：**
-- **期間指定検索:**  
-  ソートキーを使い、特定期間内の注文情報を絞り込むためのクエリです。BETWEEN句を用いることで、開始日から終了日までの範囲検索を実現しています。
-
-### 3.3 ステータス別注文取得（GSI使用）
-
-```javascript
-{
-  TableName: 'Orders',
-  IndexName: 'GSI1',
-  KeyConditionExpression: 'GSI1PK = :status',
-  ExpressionAttributeValues: {
-    ':status': 'ORDER#COMPLETED'
-  }
-}
-```
-
-**補足説明：**
-- **GSIの利用:**  
-  プライマリキー以外の属性（この場合は注文状態）での検索が可能です。GSI1PKに基づいて、特定のステータスの注文情報を効率的に取得できます。
-
-### 3.4 トランザクション処理による複数アイテムの一貫した更新
-
-```javascript
-{
-  TransactItems: [
+  // プライマリキー
+  PK: 'USER#user123',
+  SK: 'ORDER#2024-03-08#550e8400-e29b-41d4-a716-446655440000',
+  
+  // 基本情報
+  orderId: '550e8400-e29b-41d4-a716-446655440000',
+  userId: 'user123',
+  orderDate: '2024-03-08',
+  status: 'CONFIRMED',
+  
+  // タイムスタンプ
+  createdAt: '2024-03-08T10:30:00.000Z',
+  updatedAt: '2024-03-08T11:15:00.000Z',
+  
+  // 金額情報（精密計算）
+  subtotal: 3500.00,      // 商品合計
+  tax: 350.00,            // 税額
+  taxRate: 0.1,           // 税率 (10%)
+  total: 3850.00,         // 総額
+  currency: 'JPY',
+  
+  // 注文アイテム詳細
+  items: [
     {
-      Update: {
-        TableName: 'Orders',
-        Key: { PK: 'USER#123', SK: 'ORDER#2024-01-01' },
-        UpdateExpression: 'SET status = :newStatus, updatedAt = :now',
-        ExpressionAttributeValues: {
-          ':newStatus': 'SHIPPED',
-          ':now': '2024-01-02T10:30:00Z'
-        }
-      }
+      productId: 'P001',
+      productName: 'Wireless Headphones',
+      quantity: 2,
+      unitPrice: 1500.00,
+      totalPrice: 3000.00,
+      sku: 'WH-1500-BLK',
+      category: 'Electronics'
     },
     {
-      Update: {
-        TableName: 'Inventory',
-        Key: { productId: 'P1' },
-        UpdateExpression: 'SET stock = stock - :quantity',
-        ExpressionAttributeValues: {
-          ':quantity': 2
-        }
-      }
+      productId: 'P002',
+      productName: 'Phone Case',
+      quantity: 1,
+      unitPrice: 500.00,
+      totalPrice: 500.00,
+      sku: 'PC-500-RED',
+      category: 'Accessories'
     }
-  ]
+  ],
+  
+  // 配送・請求情報
+  shippingAddress: {
+    name: 'John Doe',
+    address: '123 Shibuya Street',
+    city: 'Tokyo',
+    postalCode: '150-0002',
+    country: 'Japan'
+  },
+  billingAddress: { /* 同様の構造 */ },
+  shippingMethod: 'STANDARD',
+  
+  // GSI用キー
+  GSI1PK: 'STATUS#CONFIRMED',
+  GSI1SK: '2024-03-08#550e8400-e29b-41d4-a716-446655440000',
+  GSI2PK: 'DATE#2024-03-08',
+  GSI2SK: 'CONFIRMED#550e8400-e29b-41d4-a716-446655440000',
+  
+  // メタデータ
+  version: 1,              // 楽観的排他制御
+  source: 'mobile_app',    // 注文元
+  notes: 'Gift wrapping requested'
 }
 ```
 
-**補足説明：**
-- **トランザクション処理:**  
-  注文ステータスの更新と在庫の減少を単一のトランザクションとして処理することで、データの一貫性を保証します。
-- **全体の成功または失敗:**  
-  TransactWriteItemsは、すべての操作が成功するか、すべての操作が失敗するかのいずれかとなり、データの整合性を確保します。
-
----
-
-## 4. 設計のベストプラクティス
-
-システム全体のパフォーマンスや拡張性を高めるための設計上の注意点や推奨事項です。
-
-### 4.1 キー設計のポイント
-* **主要識別子:**  
-  パーティションキーにはデータの一意性を担保する主要な識別子を使用します。ユーザーIDや注文IDなどが適しています。
-* **ソートキー:**  
-  時系列データや範囲検索が必要な属性を設定することで、後続のクエリパフォーマンスが向上します。
-* **GSI:**  
-  頻繁な検索パターンに合わせ、必要な属性に対してグローバルセカンダリインデックスを設計します。
-
-### 4.2 データモデリングの注意点
-* **単一テーブルデザイン:**  
-  関連するデータを1つのテーブルに格納することで、JOIN処理を回避し、パフォーマンスの最適化を図ります。
-* **事前の検索パターン定義:**  
-  どのようなクエリが頻繁に行われるかを前もって把握し、それに合わせた属性やインデックスの設計を行います。
-* **明確な命名規則:**  
-  属性名やインデックス名は、誰が見ても理解しやすいように一貫した命名規則を採用することが重要です。
-
-### 4.3 大規模データ対応の戦略
-* **パーティション分散の最適化:**  
-  - パーティションキーにランダムサフィックスを追加し、データをより均等に分散
-  ```javascript
-  // ユーザー別アクセスが非常に多い場合
-  PK: 'USER#123#01', // 01~10のサフィックスを追加してデータを分散
-  ```
-  
-* **複合キーの活用:**  
-  - 複雑な検索条件をサポートするため、複数の属性を組み合わせたキーの構築
-  ```javascript
-  // 地域別かつステータス別の検索
-  GSI2PK: 'REGION#TOKYO#STATUS#PENDING'
-  ```
-
-* **スパースインデックスの利用:**  
-  - 特定の条件を満たすアイテムのみにGSI属性を設定し、インデックスサイズを最適化
-
----
-
-## 5. 拡張検討ポイント
-
-将来的な要件追加やシステム拡張を見据えた設計上の検討事項です。
-
-### 5.1 追加可能な機能
-* **製品カテゴリによる検索:**  
-  新しいGSIを追加し、製品カテゴリをキーにした検索を可能にすることで、ユーザー体験を向上できます。
-* **注文金額による範囲検索:**  
-  注文合計金額を元にしたフィルタリング機能を追加することで、金額に応じたデータ抽出が可能になります。
-* **配送ステータスの追跡:**  
-  注文の配送状況を管理するフィールドを追加するなど、サービス向上のための拡張を検討します。
-
-### 5.2 パフォーマンス最適化
-* **ホットパーティションの回避:**  
-  特定のパーティションにアクセスが集中しないよう、キー設計やデータ分散に注意する必要があります。
-* **バッチ処理:**  
-  一括更新や集計処理は、バッチ処理を活用して効率的に実施します。
-* **スキャンオペレーションの最小化:**  
-  クエリやインデックスを適切に設定し、必要最小限のデータ取得に留めることで、コストとパフォーマンスのバランスを図ります。
-
-### 5.3 データライフサイクル管理
-* **TTLの活用:**  
-  古いデータを自動的に削除するためにTTL属性を設定し、ストレージコストを削減します。
-  ```javascript
-  {
-    // 注文データ属性
-    expirationTime: 1735689600 // 2025-01-01 00:00:00（Unix時間）
-  }
-  ```
-
-* **アーカイブ戦略:**  
-  TTLで削除される前に、履歴データをS3に保存し、AWS Athenaなどでの分析に活用する戦略を構築します。
-  ```javascript
-  // DynamoDB Streams + Lambda + S3 連携
-  // 1. アイテムが削除される前にDynamoDB Streamsで変更を検知
-  // 2. Lambdaでデータを処理しS3に保存
-  // 3. S3に保存されたデータをAthenaで分析
-  ```
-
----
-
-## 6. 実装時の注意点
-
-実際にシステムを実装する際のエラーハンドリングやコスト最適化のポイントを解説します。
-
-### 6.1 エラーハンドリング
+### 3.2 注文ステータスの定義
 
 ```javascript
-try {
-  const result = await dynamodb.query(params).promise();
-  console.log('Query successful:', result);
+const ORDER_STATUS = {
+  PENDING: 'PENDING',           // 保留中
+  CONFIRMED: 'CONFIRMED',       // 確認済み
+  PROCESSING: 'PROCESSING',     // 処理中
+  SHIPPED: 'SHIPPED',           // 発送済み
+  DELIVERED: 'DELIVERED',       // 配達完了
+  CANCELLED: 'CANCELLED',       // キャンセル
+  REFUNDED: 'REFUNDED'          // 返金済み
+}
+```
+
+### 3.3 バリデーション仕様
+
+```javascript
+function validateOrder(order) {
+  const errors = [];
   
-  // 結果が空の場合の処理
-  if (result.Items.length === 0) {
-    console.log('No items found for the query');
-    // 適切なレスポンスを返す
+  // 必須フィールド検証
+  if (!order.userId || typeof order.userId !== 'string') {
+    errors.push('UserId is required and must be a string');
   }
   
-} catch (error) {
-  console.error('Error executing query:', error);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(order.orderDate)) {
+    errors.push('OrderDate must be in YYYY-MM-DD format');
+  }
   
-  // エラータイプによる分岐処理
-  if (error.code === 'ProvisionedThroughputExceededException') {
-    // スロットリングエラーの場合
-    console.log('Rate limit exceeded, implementing backoff strategy');
-    // 指数バックオフ再試行ロジックを実装
-  } else if (error.code === 'ResourceNotFoundException') {
-    // テーブルやインデックスが存在しない場合
-    console.error('Table or index not found:', error.message);
+  // ビジネスルール検証
+  if (!Array.isArray(order.items) || order.items.length === 0) {
+    errors.push('Items must be a non-empty array');
+  }
+  
+  // 数値精度検証
+  order.items?.forEach((item, index) => {
+    if (typeof item.quantity !== 'number' || !Number.isInteger(item.quantity) || item.quantity <= 0) {
+      errors.push(`Item[${index}]: quantity must be a positive integer`);
+    }
+    
+    if (typeof item.price !== 'number' || item.price < 0) {
+      errors.push(`Item[${index}]: price must be non-negative`);
+    }
+  });
+  
+  return { isValid: errors.length === 0, errors };
+}
+```
+
+-----
+
+## 4. クエリパターン
+
+### 4.1 主要なアクセスパターン
+
+|パターン    |使用頻度|重要度|実装方法     |
+|--------|----|---|---------|
+|ユーザー注文履歴|高   |高  |プライマリテーブル|
+|ステータス別検索|中   |高  |GSI1     |
+|日付別検索   |中   |中  |GSI2     |
+|個別注文取得  |高   |高  |Get操作    |
+|統計情報    |低   |中  |複合クエリ    |
+
+### 4.2 実装例
+
+#### 4.2.1 ユーザーの注文履歴取得
+
+```javascript
+async function getUserOrders(userId, options = {}) {
+  const {
+    limit = 50,
+    ascending = false,
+    startDate,
+    endDate,
+    status
+  } = options;
+  
+  let keyCondition = 'PK = :userId';
+  const expressionValues = { ':userId': `USER#${userId}` };
+  
+  // 日付範囲の指定
+  if (startDate && endDate) {
+    keyCondition += ' AND SK BETWEEN :startDate AND :endDate';
+    expressionValues[':startDate'] = `ORDER#${startDate}`;
+    expressionValues[':endDate'] = `ORDER#${endDate}#\uFFFF`;
+  }
+  
+  const params = {
+    TableName: ORDERS_TABLE,
+    KeyConditionExpression: keyCondition,
+    ExpressionAttributeValues: expressionValues,
+    ScanIndexForward: ascending,
+    Limit: limit
+  };
+  
+  // ステータスフィルター（効率的なFilterExpression）
+  if (status) {
+    params.FilterExpression = '#status = :status';
+    params.ExpressionAttributeNames = { '#status': 'status' };
+    params.ExpressionAttributeValues[':status'] = status;
+  }
+  
+  const command = new QueryCommand(params);
+  return await docClient.send(command);
+}
+```
+
+#### 4.2.2 ステータス別注文検索（GSI1使用）
+
+```javascript
+async function getOrdersByStatus(status, options = {}) {
+  const params = {
+    TableName: ORDERS_TABLE,
+    IndexName: 'GSI1-Status-Date',
+    KeyConditionExpression: 'GSI1PK = :status',
+    ExpressionAttributeValues: {
+      ':status': `STATUS#${status}`
+    },
+    ScanIndexForward: options.ascending || false,
+    Limit: options.limit || 50
+  };
+  
+  // 日付範囲フィルター
+  if (options.startDate && options.endDate) {
+    params.KeyConditionExpression += ' AND GSI1SK BETWEEN :startDate AND :endDate';
+    params.ExpressionAttributeValues[':startDate'] = `${options.startDate}#`;
+    params.ExpressionAttributeValues[':endDate'] = `${options.endDate}#\uFFFF`;
+  }
+  
+  const command = new QueryCommand(params);
+  return await docClient.send(command);
+}
+```
+
+#### 4.2.3 トランザクション処理による注文更新
+
+```javascript
+async function updateOrderWithInventory(userId, orderId, orderDate, newStatus) {
+  const transactItems = [
+    {
+      Update: {
+        TableName: ORDERS_TABLE,
+        Key: {
+          PK: `USER#${userId}`,
+          SK: `ORDER#${orderDate}#${orderId}`
+        },
+        UpdateExpression: `
+          SET #status = :newStatus, 
+              updatedAt = :now, 
+              version = version + :inc,
+              GSI1PK = :newGSI1PK,
+              GSI2SK = :newGSI2SK
+        `,
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: {
+          ':newStatus': newStatus,
+          ':now': new Date().toISOString(),
+          ':inc': 1,
+          ':newGSI1PK': `STATUS#${newStatus}`,
+          ':newGSI2SK': `${newStatus}#${orderId}`
+        },
+        ConditionExpression: 'attribute_exists(PK)'
+      }
+    }
+    // 必要に応じて在庫テーブルの更新も追加
+  ];
+  
+  const command = new TransactWriteCommand({ TransactItems: transactItems });
+  return await docClient.send(command);
+}
+```
+
+-----
+
+## 5. 実装詳細
+
+### 5.1 エラーハンドリング戦略
+
+```javascript
+async function executeWithRetry(operation, operationName) {
+  const maxRetries = 3;
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      
+      // リトライしない条件
+      if (error.name === 'ValidationException' || 
+          error.name === 'ConditionalCheckFailedException' ||
+          attempt === maxRetries) {
+        break;
+      }
+      
+      // 指数バックオフ（最大5秒）
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      console.warn(`${operationName} attempt ${attempt} failed, retrying in ${delay}ms`);
+    }
+  }
+  
+  console.error(`${operationName} failed after ${maxRetries} attempts:`, lastError);
+  throw lastError;
+}
+```
+
+### 5.2 統計情報の生成
+
+```javascript
+async function getOrderStatistics(userId = null, options = {}) {
+  const { startDate, endDate } = options;
+  
+  // データ取得
+  let orders;
+  if (userId) {
+    orders = await getUserOrders(userId, { startDate, endDate, limit: 1000 });
   } else {
-    // その他のエラー
-    console.error('Unexpected error:', error);
+    orders = await getOrdersByDate(startDate, { limit: 1000 });
+  }
+  
+  const items = orders.Items || [];
+  
+  // 統計計算
+  const stats = {
+    totalOrders: items.length,
+    totalAmount: items.reduce((sum, order) => sum + (order.total || 0), 0),
+    averageOrderValue: 0,
+    statusBreakdown: {},
+    topProducts: {},
+    trends: {
+      dailyOrders: {},
+      dailyRevenue: {}
+    }
+  };
+  
+  // ステータス別集計
+  items.forEach(order => {
+    const status = order.status || 'UNKNOWN';
+    stats.statusBreakdown[status] = (stats.statusBreakdown[status] || 0) + 1;
+    
+    // 日別トレンド
+    const date = order.orderDate;
+    stats.trends.dailyOrders[date] = (stats.trends.dailyOrders[date] || 0) + 1;
+    stats.trends.dailyRevenue[date] = (stats.trends.dailyRevenue[date] || 0) + order.total;
+    
+    // 商品別集計
+    order.items?.forEach(item => {
+      const productId = item.productId;
+      if (!stats.topProducts[productId]) {
+        stats.topProducts[productId] = {
+          quantity: 0,
+          revenue: 0,
+          productName: item.productName || productId
+        };
+      }
+      stats.topProducts[productId].quantity += item.quantity;
+      stats.topProducts[productId].revenue += item.totalPrice || 0;
+    });
+  });
+  
+  stats.averageOrderValue = stats.totalOrders > 0 
+    ? Math.round((stats.totalAmount / stats.totalOrders) * 100) / 100 
+    : 0;
+  
+  return stats;
+}
+```
+
+### 5.3 バッチ処理の最適化
+
+```javascript
+async function batchSaveOrders(orderDataList) {
+  const batchSize = 25; // DynamoDB制限
+  const results = [];
+  
+  for (let i = 0; i < orderDataList.length; i += batchSize) {
+    const batch = orderDataList.slice(i, i + batchSize);
+    
+    const params = {
+      RequestItems: {
+        [ORDERS_TABLE]: batch.map(orderData => ({
+          PutRequest: { Item: createOrderItem(orderData) }
+        }))
+      }
+    };
+    
+    let attempt = 0;
+    let unprocessedItems = params.RequestItems;
+    
+    // 未処理アイテムの処理
+    while (unprocessedItems && Object.keys(unprocessedItems).length > 0 && attempt < 3) {
+      const command = new BatchWriteCommand({ RequestItems: unprocessedItems });
+      const result = await docClient.send(command);
+      
+      unprocessedItems = result.UnprocessedItems;
+      attempt++;
+      
+      if (unprocessedItems && Object.keys(unprocessedItems).length > 0) {
+        // 指数バックオフ
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      }
+    }
+    
+    results.push({ batchIndex: Math.floor(i / batchSize), processed: batch.length });
+  }
+  
+  return results;
+}
+```
+
+-----
+
+## 6. 運用とモニタリング
+
+### 6.1 CloudWatchメトリクス監視
+
+```javascript
+// 主要な監視メトリクス
+const MONITORING_METRICS = {
+  // パフォーマンス
+  'AWS/DynamoDB/ConsumedReadCapacityUnits': '読み取り容量使用量',
+  'AWS/DynamoDB/ConsumedWriteCapacityUnits': '書き込み容量使用量',
+  'AWS/DynamoDB/SuccessfulRequestLatency': 'レスポンス時間',
+  
+  // エラー
+  'AWS/DynamoDB/ThrottledRequests': 'スロットリング発生数',
+  'AWS/DynamoDB/SystemErrors': 'システムエラー数',
+  'AWS/DynamoDB/UserErrors': 'ユーザーエラー数',
+  
+  // ストレージ
+  'AWS/DynamoDB/TableSizeBytes': 'テーブルサイズ',
+  'AWS/DynamoDB/ItemCount': 'アイテム数'
+};
+```
+
+### 6.2 アラート設定例
+
+```yaml
+# CloudWatch Alarms (YAML形式での設定例)
+HighLatencyAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: DynamoDB-Orders-HighLatency
+    MetricName: SuccessfulRequestLatency
+    Namespace: AWS/DynamoDB
+    Statistic: Average
+    Period: 300
+    EvaluationPeriods: 2
+    Threshold: 100  # 100ms
+    ComparisonOperator: GreaterThanThreshold
+    
+ThrottlingAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: DynamoDB-Orders-Throttling
+    MetricName: ThrottledRequests
+    Namespace: AWS/DynamoDB
+    Statistic: Sum
+    Period: 300
+    EvaluationPeriods: 1
+    Threshold: 0
+    ComparisonOperator: GreaterThanThreshold
+```
+
+### 6.3 ログ分析とトレーシング
+
+```javascript
+// 構造化ログの実装例
+function logDynamoDBOperation(operation, params, result, duration) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    operation,
+    tableName: params.TableName,
+    indexName: params.IndexName,
+    duration: `${duration}ms`,
+    itemCount: result.Items?.length || 0,
+    scannedCount: result.ScannedCount,
+    consumedCapacity: result.ConsumedCapacity,
+    lastEvaluatedKey: !!result.LastEvaluatedKey,
+    requestId: result.$metadata?.requestId
+  };
+  
+  console.log(JSON.stringify(logEntry));
+}
+
+// 使用例
+const startTime = Date.now();
+const result = await docClient.send(command);
+const duration = Date.now() - startTime;
+logDynamoDBOperation('Query', params, result, duration);
+```
+
+-----
+
+## 7. ベストプラクティス
+
+### 7.1 パフォーマンス最適化
+
+#### ホットパーティション対策
+
+```javascript
+// パーティション分散の改善例
+function createDistributedKey(userId) {
+  // ユーザーIDのハッシュを使用してサフィックスを生成
+  const hash = crypto.createHash('md5').update(userId).digest('hex');
+  const suffix = parseInt(hash.substring(0, 2), 16) % 10; // 0-9
+  return `USER#${userId}#${suffix}`;
+}
+
+// 検索時は全てのサフィックスを並列クエリ
+async function getDistributedUserOrders(userId, options = {}) {
+  const promises = [];
+  
+  for (let suffix = 0; suffix < 10; suffix++) {
+    const params = {
+      TableName: ORDERS_TABLE,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: {
+        ':pk': `USER#${userId}#${suffix}`
+      },
+      ...options
+    };
+    
+    promises.push(docClient.send(new QueryCommand(params)));
+  }
+  
+  const results = await Promise.all(promises);
+  
+  // 結果をマージして日付順にソート
+  const allItems = results.flatMap(result => result.Items || []);
+  return allItems.sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
+}
+```
+
+#### クエリの最適化
+
+```javascript
+// プロジェクション式による効率化
+const PROJECTION_EXPRESSIONS = {
+  LIST: 'orderId, orderDate, #status, total, items[0].productName',
+  DETAIL: 'orderId, orderDate, #status, total, items, shippingAddress, createdAt',
+  SUMMARY: 'orderId, total, #status'
+};
+
+// 必要な属性のみを取得
+async function getUserOrdersSummary(userId) {
+  const params = {
+    TableName: ORDERS_TABLE,
+    KeyConditionExpression: 'PK = :userId',
+    ExpressionAttributeValues: { ':userId': `USER#${userId}` },
+    ProjectionExpression: PROJECTION_EXPRESSIONS.SUMMARY,
+    ExpressionAttributeNames: { '#status': 'status' }
+  };
+  
+  return await docClient.send(new QueryCommand(params));
+}
+```
+
+### 7.2 データ整合性の確保
+
+#### 楽観的排他制御
+
+```javascript
+async function updateOrderWithOptimisticLocking(userId, orderId, orderDate, updates) {
+  // 現在のバージョンを取得
+  const current = await getOrder(userId, orderId, orderDate);
+  if (!current) {
+    throw new Error('Order not found');
+  }
+  
+  const params = {
+    TableName: ORDERS_TABLE,
+    Key: {
+      PK: `USER#${userId}`,
+      SK: `ORDER#${orderDate}#${orderId}`
+    },
+    UpdateExpression: 'SET version = version + :inc, updatedAt = :now',
+    ExpressionAttributeValues: {
+      ':inc': 1,
+      ':now': new Date().toISOString(),
+      ':expectedVersion': current.version
+    },
+    ConditionExpression: 'version = :expectedVersion'
+  };
+  
+  // 追加の更新フィールドを設定
+  Object.entries(updates).forEach(([key, value], index) => {
+    params.UpdateExpression += `, #${key} = :val${index}`;
+    params.ExpressionAttributeNames = { 
+      ...params.ExpressionAttributeNames,
+      [`#${key}`]: key 
+    };
+    params.ExpressionAttributeValues[`:val${index}`] = value;
+  });
+  
+  try {
+    const command = new UpdateCommand(params);
+    return await docClient.send(command);
+  } catch (error) {
+    if (error.name === 'ConditionalCheckFailedException') {
+      throw new Error('Order was modified by another process. Please retry.');
+    }
+    throw error;
   }
 }
 ```
 
-**補足説明：**
-- **詳細なエラーハンドリング:**  
-  エラーコードに基づいて適切な処理を行い、システムの安定性を高めます。
-- **再試行ロジック:**  
-  スロットリングなどの一時的なエラーに対して、指数バックオフなどの再試行戦略を実装します。
-- **空の結果セット対応:**  
-  クエリ結果が空の場合も適切に処理し、ユーザーエクスペリエンスを向上させます。
+### 7.3 コスト最適化戦略
 
-### 6.2 コスト最適化
-* **ProjectionExpressionの活用:**  
-  必要な属性のみを取得することで、読み込みコストやレスポンスサイズの最適化を図ります。
-* **適切なキャパシティユニット設定:**  
-  予想されるアクセス頻度に合わせたRead/Write容量の設定を行い、不要なコストを抑えます。
-* **クエリ効率化:**  
-  インデックスの適切な設計や、不要なスキャン操作の回避により、全体のパフォーマンスとコストのバランスを調整します。
+#### TTLによる自動データ削除
 
-### 6.3 コスト見積もり例
+```javascript
+function addTTLToOrder(orderItem, retentionDays = 2555) { // 約7年
+  const ttlTimestamp = Math.floor(Date.now() / 1000) + (retentionDays * 24 * 60 * 60);
+  return {
+    ...orderItem,
+    ttl: ttlTimestamp  // TTL属性
+  };
+}
 
-現実的なビジネスシナリオに基づいたコスト試算例です：
+// 古いデータのアーカイブ処理
+async function archiveOldOrders() {
+  const cutoffDate = new Date();
+  cutoffDate.setFullYear(cutoffDate.getFullYear() - 1); // 1年前
+  
+  // DynamoDB Streamsと組み合わせてS3にアーカイブ
+  // Lambda関数で実装することが一般的
+}
+```
 
-**想定条件：**
-- ユーザー数: 10,000人
-- 1ユーザーあたりの月間注文数: 平均5件
-- 注文データサイズ: 約2KB/アイテム
-- 月間アクティブユーザー率: 80%
+#### 読み取り頻度による戦略的設計
 
-**月間データ量：**
-- 新規注文データ: 10,000 × 5 = 50,000アイテム/月
-- 総格納データ量: 50,000 × 2KB = 100MB/月（累積）
+```javascript
+// 頻繁にアクセスされる最新データ用のGSI
+const RECENT_ORDERS_GSI = {
+  IndexName: 'GSI-Recent-Orders',
+  KeySchema: [
+    { AttributeName: 'GSI3PK', KeyType: 'HASH' },  // RECENT#{date}
+    { AttributeName: 'GSI3SK', KeyType: 'RANGE' }  // {timestamp}#{orderId}
+  ],
+  // 直近30日のデータのみにGSI属性を設定
+  // TTL機能と組み合わせてインデックスサイズを制御
+};
 
-**月間操作量：**
-- 書き込み操作: 50,000 WCU（新規注文のみ）
-- 読み取り操作:
-  - 注文履歴取得: 8,000 × 10 = 80,000 RCU（アクティブユーザーが月10回履歴確認）
-  - 管理操作: 約20,000 RCU（ステータス別検索など）
-  - 合計: 約100,000 RCU/月
+function addRecentOrdersGSI(orderItem) {
+  const orderDate = new Date(orderItem.orderDate);
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  // 30日以内の注文のみGSI属性を追加
+  if (orderDate >= thirtyDaysAgo) {
+    return {
+      ...orderItem,
+      GSI3PK: `RECENT#${orderItem.orderDate}`,
+      GSI3SK: `${orderItem.createdAt}#${orderItem.orderId}`
+    };
+  }
+  
+  return orderItem;
+}
+```
 
-**コスト比較（米国東部リージョン想定）：**
-- **オンデマンドモード：**
-  - 書き込み: 50,000 × $1.25/百万 = 約$0.06
-  - 読み取り: 100,000 × $0.25/百万 = 約$0.03
-  - ストレージ: 100MB × $0.25/GB = 約$0.03
-  - 月額合計: 約$0.12
+### 7.4 スケーラビリティ設計
 
-- **プロビジョンドモード：**
-  - 書き込み: 2 WCU（ピーク時の調整値） × $0.00065/時間 × 730時間 = 約$0.95
-  - 読み取り: 5 RCU（ピーク時の調整値） × $0.00013/時間 × 730時間 = 約$0.47
-  - ストレージ: 約$0.03
-  - 月額合計: 約$1.45
+#### マルチリージョン対応
 
-**推奨：**
-トラフィックの変動が大きい場合や、成長段階のサービスではオンデマンドモードが適しています。安定したトラフィックで予測可能なワークロードの場合は、プロビジョンドモードの方がコスト効率が良くなる可能性があります。
+```javascript
+// リージョン間レプリケーション設定
+const GLOBAL_TABLE_CONFIG = {
+  TableName: 'Orders',
+  GlobalTableVersion: '2019.11.21',
+  ReplicationGroup: [
+    { RegionName: 'us-east-1' },
+    { RegionName: 'ap-northeast-1' },
+    { RegionName: 'eu-west-1' }
+  ]
+};
 
----
+// リージョン固有のクライアント設定
+const clients = {
+  'us-east-1': new DynamoDBClient({ region: 'us-east-1' }),
+  'ap-northeast-1': new DynamoDBClient({ region: 'ap-northeast-1' }),
+  'eu-west-1': new DynamoDBClient({ region: 'eu-west-1' })
+};
 
-この設計パターンは基本的な注文管理システムを想定しており、ビジネス要件に応じて柔軟にカスタマイズできます。特に、事前にアクセスパターンを明確に定義することで、後の拡張やパフォーマンス最適化に大きく寄与します。
+// 最寄りリージョンへの読み取り
+function getNearestRegionClient(userLocation) {
+  const regionMapping = {
+    'US': 'us-east-1',
+    'JP': 'ap-northeast-1',
+    'EU': 'eu-west-1'
+  };
+  
+  return clients[regionMapping[userLocation]] || clients['us-east-1'];
+}
+```
+
+-----
+
+## 8. セキュリティ考慮事項
+
+### 8.1 IAMポリシー例
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem
+```

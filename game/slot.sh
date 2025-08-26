@@ -1,186 +1,314 @@
-#!/bin/bash
+import React, { useState, useEffect, useCallback } from ‘react’;
 
-########################
-# スロットゲーム
+const SlotGame = () => {
+const [gameState, setGameState] = useState(‘start’); // ‘start’, ‘playing’, ‘result’, ‘stats’
+const [cards, setCards] = useState([’?’, ‘?’, ‘?’]);
+const [enterCount, setEnterCount] = useState(0);
+const [isAnimating, setIsAnimating] = useState(false);
+const [totalPlays, setTotalPlays] = useState(0);
+const [wins, setWins] = useState(0);
+const [showWinAnimation, setShowWinAnimation] = useState(false);
+const [message, setMessage] = useState(’’);
 
-########################
+const cardSymbols = [‘7’, ‘$’, ‘?’, ‘♠’, ‘♥’, ‘♦’, ‘♣’];
 
-# カラー定義
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+const getRandomCard = () => {
+return cardSymbols[Math.floor(Math.random() * cardSymbols.length)];
+};
 
-# カーソル非表示
-printf "\e[?25l"
+const resetGame = () => {
+setCards([’?’, ‘?’, ‘?’]);
+setEnterCount(0);
+setIsAnimating(false);
+setShowWinAnimation(false);
+setMessage(’’);
+};
 
-# ANSIエスケープシーケンスリセット
-esc_reset() {
-  printf "\e[2J\e[H\e[?25h"
-  exit 0
+const startGame = () => {
+resetGame();
+setGameState(‘playing’);
+setTotalPlays(prev => prev + 1);
+};
+
+const checkWin = useCallback((card1, card2, card3) => {
+return card1 === card2 && card2 === card3;
+}, []);
+
+const getCardColors = (index, card1, card2, card3) => {
+if (enterCount === 1 && index === 0) return ‘text-green-400’;
+if (enterCount === 2) {
+if (card1 === card2 && (index === 0 || index === 1)) return ‘text-blue-400’;
+if (index < 2) return ‘text-green-400’;
 }
-trap "esc_reset" INT QUIT TERM
-
-# 乱数生成
-random_card() {
-  cards=("7" "$" "?" "♠" "♥" "♦" "♣")
-  echo "${cards[$((RANDOM % 7))]}"
+if (enterCount === 3) {
+if (checkWin(card1, card2, card3)) return ‘text-yellow-400’;
+if ((card1 === card2 && (index === 0 || index === 1)) ||
+(card1 === card3 && (index === 0 || index === 2)) ||
+(card2 === card3 && (index === 1 || index === 2))) {
+return ‘text-blue-400’;
 }
-
-# スロット画面の描画
-slot_init() {
-  clear
-  printf "${YELLOW}╔═══════════════════════════════════╗${NC}\n"
-  printf "${YELLOW}║       ${WHITE}華麗なるスロットゲーム${YELLOW}       ║${NC}\n"
-  printf "${YELLOW}╚═══════════════════════════════════╝${NC}\n\n"
-  slot_flame="${CYAN}╔═══════════╗${NC}"
-  show_cards="${CYAN}║${NC}[${WHITE}|$(random_card)|$(random_card)|$(random_card)|${NC}]${CYAN}║${NC}"
-  bottom_flame="${CYAN}╚═══════════╝${NC}"
-  printf "%s\n%s\n%s\n" "${slot_flame}" "${show_cards}" "${bottom_flame}"
+return ‘text-green-400’;
 }
+return ‘text-white’;
+};
 
-# ゲームスタート・終了の確認
-game_start_end() {
-  while :
-  do
-    read -p "$1" key
-    case "$key" in
-      [Yy]*) return 0 ;;
-      [Nn]*) esc_reset ;;
-      *) echo -e "${RED}y または n を入力してください!${NC}" ;;
-    esac
-  done
-}
+const processSlot = useCallback(() => {
+if (enterCount >= 3) return;
 
-# ゲームの判定
-slot_judge() {
-  local c1="${GREEN}" c2="${BLUE}" ce="${NC}"
-  case "$enter_count" in
-    0)
-      card_1=$(random_card)
-      card_2=$(random_card)
-      card_3=$(random_card)
-      printf "\e[4;1H${CYAN}║${NC}[${WHITE}|%s|%s|%s|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      ;;
-    1)
-      card_2=$(random_card)
-      card_3=$(random_card)
-      printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c1%s$ce|%s|%s|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      ;;
-    2)
-      card_3=$(random_card)
-      if [[ "$card_1" == "$card_2" ]]; then
-        printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c2%s$ce|$c2%s$ce|%s|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      else
-        printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c1%s$ce|$c1%s$ce|%s|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      fi
-      ;;
-    3)
-      if [[ "$card_1" == "$card_2" && "$card_1" == "$card_3" ]]; then
-        success_show
-        return
-      fi
-      if [[ "$card_1" == "$card_2" ]]; then
-        printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c2%s$ce|$c2%s$ce|$c1%s$ce|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      elif [[ "$card_1" == "$card_3" ]]; then
-        printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c2%s$ce|$c1%s$ce|$c2%s$ce|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      elif [[ "$card_2" == "$card_3" ]]; then
-        printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c1%s$ce|$c2%s$ce|$c2%s$ce|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      else
-        printf "\e[4;1H${CYAN}║${NC}[${WHITE}|$c1%s$ce|$c1%s$ce|$c1%s$ce|${NC}]${CYAN}║${NC}\e[1G" "${card_1}" "${card_2}" "${card_3}"
-      fi
-      printf "\e[7;1H\e[K${RED}残念でした!${NC}\n"
-      return
-      ;;
-  esac
+```
+const newCards = [...cards];
+
+switch (enterCount) {
+  case 0:
+    newCards[0] = getRandomCard();
+    newCards[1] = getRandomCard();
+    newCards[2] = getRandomCard();
+    break;
+  case 1:
+    newCards[1] = getRandomCard();
+    newCards[2] = getRandomCard();
+    break;
+  case 2:
+    newCards[2] = getRandomCard();
+    break;
 }
 
-# スロットのサクセス画面（点滅表示）
-display_slot() {
-  local c1="${RED}" c2="${YELLOW}" ce="${NC}"
-  for i in {1..8}; do
-    clear
-    printf "${YELLOW}╔═══════════════════════════════════╗${NC}\n"
-    printf "${YELLOW}║       ${WHITE}大当たり！おめでとう！${YELLOW}       ║${NC}\n"
-    printf "${YELLOW}╚═══════════════════════════════════╝${NC}\n\n"
-    if ((i % 2 == 0)); then
-      printf "$c1${slot_flame}$ce\n"
-    else
-      printf "${slot_flame}\n"
-    fi
-    printf "${CYAN}║${NC}[${WHITE}|$c2%s$ce|$c2%s$ce|$c2%s$ce|${NC}]${CYAN}║${NC}\n" "${card_1}" "${card_2}" "${card_3}"
-    if ((i % 2 == 0)); then
-      printf "$c1${bottom_flame}$ce\n"
-    else
-      printf "${bottom_flame}\n"
-    fi
-    sleep 0.2
-  done
-}
+setCards(newCards);
+const newEnterCount = enterCount + 1;
+setEnterCount(newEnterCount);
 
-success_show() {
-  display_slot
-  printf "\e[7;1H${GREEN}おめでとうございます! 大当たりです！${NC}\n"
-  ((wins++))
+if (newEnterCount === 3) {
+  if (checkWin(newCards[0], newCards[1], newCards[2])) {
+    setShowWinAnimation(true);
+    setWins(prev => prev + 1);
+    setMessage('おめでとうございます! 大当たりです！');
+  } else {
+    setMessage('残念でした!');
+  }
+  setTimeout(() => {
+    setGameState('result');
+  }, showWinAnimation ? 2000 : 1000);
 }
+```
 
-# スロットマシーン作成
-slot_machine() {
-  enter_count=0
-  trap "((enter_count++))" USR1 USR2
-  trap "slot_init" CONT
-  while ((enter_count < 3)); do
-    slot_judge
-    sleep 0.2
-  done
+}, [cards, enterCount, checkWin]);
+
+const handleKeyPress = useCallback((e) => {
+if (gameState === ‘playing’ && e.code === ‘Enter’ && !isAnimating) {
+e.preventDefault();
+setIsAnimating(true);
+setTimeout(() => {
+processSlot();
+setIsAnimating(false);
+}, 200);
 }
+}, [gameState, isAnimating, processSlot]);
 
-# 統計表示
-show_stats() {
-  clear
-  printf "${YELLOW}╔═══════════════════════════════════╗${NC}\n"
-  printf "${YELLOW}║           ${WHITE}ゲーム統計${YELLOW}             ║${NC}\n"
-  printf "${YELLOW}╚═══════════════════════════════════╝${NC}\n\n"
-  printf "${CYAN}総プレイ回数: ${WHITE}%d${NC}\n" $plays
-  printf "${CYAN}勝利回数: ${WHITE}%d${NC}\n" $wins
-  printf "${CYAN}勝率: ${WHITE}%.2f%%${NC}\n" $(echo "scale=2; $wins/$plays*100" | bc)
-  read -n 1 -s -r -p "Press any key to continue..."
-}
+useEffect(() => {
+document.addEventListener(‘keydown’, handleKeyPress);
+return () => document.removeEventListener(‘keydown’, handleKeyPress);
+}, [handleKeyPress]);
 
-# メイン処理
-main() {
-  plays=0
-  wins=0
-  while :
-  do
-    slot_init
-    printf "\e[7;1H"
-    game_start_end "${YELLOW}ゲームを始めますか？ [y/n]: ${NC}"
-    ((plays++))
-    printf "\e[7;1H\e[J"
-    slot_machine &
-    local PID=$!
-    for ((i=0; i<3; i++)); do
-      while :
-      do
-        read -s -n 1 key
-        if [[ -z $key && ${PID:=0} -gt 0 ]]; then
-          kill -USR1 $PID
-          break
-        else
-          printf "\e[7;1H${MAGENTA}何も入力せずに、Enterキーを押してください!${NC}"
-        fi
-      done
-    done
-    wait
-    printf "\e[9;1H"
-    game_start_end "${YELLOW}もう一度チャレンジしますか？ [y/n]: ${NC}" || break
-  done
-  show_stats
-}
+const showStats = () => {
+setGameState(‘stats’);
+};
 
-main
+const backToStart = () => {
+setGameState(‘start’);
+};
+
+const winRate = totalPlays > 0 ? ((wins / totalPlays) * 100).toFixed(2) : 0;
+
+const WinAnimation = () => {
+const [flash, setFlash] = useState(false);
+
+```
+useEffect(() => {
+  const interval = setInterval(() => {
+    setFlash(prev => !prev);
+  }, 200);
+
+  return () => clearInterval(interval);
+}, []);
+
+return (
+  <div className={`transition-colors duration-200 ${flash ? 'bg-red-900' : ''}`}>
+    <div className={`border-4 transition-colors duration-200 p-4 rounded-lg ${
+      flash ? 'border-red-400' : 'border-cyan-400'
+    }`}>
+      <div className="flex justify-center items-center space-x-4 text-4xl font-bold">
+        {cards.map((card, index) => (
+          <div key={index} className="text-yellow-400">
+            |{card}|
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+```
+
+};
+
+return (
+<div className="min-h-screen bg-black text-white p-8 font-mono">
+<div className="max-w-md mx-auto">
+
+```
+    {gameState === 'start' && (
+      <div className="text-center">
+        <div className="border-2 border-yellow-400 p-4 mb-8 rounded">
+          <h1 className="text-xl text-yellow-400 mb-2">╔═════════════════════════════════╗</h1>
+          <h1 className="text-xl text-yellow-400 mb-2">║     華麗なるスロットゲーム       ║</h1>
+          <h1 className="text-xl text-yellow-400">╚═════════════════════════════════╝</h1>
+        </div>
+        
+        <div className="border-4 border-cyan-400 p-4 mb-8 rounded-lg">
+          <div className="flex justify-center items-center space-x-4 text-4xl font-bold text-white">
+            <div>|?|</div>
+            <div>|?|</div>
+            <div>|?|</div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <button 
+            onClick={startGame}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded"
+          >
+            ゲームを始める
+          </button>
+          
+          {totalPlays > 0 && (
+            <button 
+              onClick={showStats}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded ml-4"
+            >
+              統計を見る
+            </button>
+          )}
+        </div>
+      </div>
+    )}
+
+    {gameState === 'playing' && (
+      <div className="text-center">
+        <div className="border-2 border-yellow-400 p-4 mb-8 rounded">
+          <h1 className="text-xl text-yellow-400 mb-2">╔═════════════════════════════════╗</h1>
+          <h1 className="text-xl text-yellow-400 mb-2">║     華麗なるスロットゲーム       ║</h1>
+          <h1 className="text-xl text-yellow-400">╚═════════════════════════════════╝</h1>
+        </div>
+
+        {showWinAnimation ? (
+          <WinAnimation />
+        ) : (
+          <div className="border-4 border-cyan-400 p-4 mb-8 rounded-lg">
+            <div className="flex justify-center items-center space-x-4 text-4xl font-bold">
+              {cards.map((card, index) => (
+                <div key={index} className={getCardColors(index, cards[0], cards[1], cards[2])}>
+                  |{card}|
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-4">
+          <p className="text-magenta-400 mb-2">
+            何も入力せずに、Enterキーを押してください!
+          </p>
+          <p className="text-cyan-400">
+            ストップ回数: {enterCount}/3
+          </p>
+        </div>
+
+        {message && (
+          <p className={`text-lg font-bold ${
+            message.includes('おめでとう') ? 'text-green-400' : 'text-red-400'
+          }`}>
+            {message}
+          </p>
+        )}
+      </div>
+    )}
+
+    {gameState === 'result' && (
+      <div className="text-center">
+        <div className="border-2 border-yellow-400 p-4 mb-8 rounded">
+          <h1 className="text-xl text-yellow-400 mb-2">╔═════════════════════════════════╗</h1>
+          <h1 className="text-xl text-yellow-400 mb-2">║     華麗なるスロットゲーム       ║</h1>
+          <h1 className="text-xl text-yellow-400">╚═════════════════════════════════╝</h1>
+        </div>
+
+        <div className="border-4 border-cyan-400 p-4 mb-8 rounded-lg">
+          <div className="flex justify-center items-center space-x-4 text-4xl font-bold">
+            {cards.map((card, index) => (
+              <div key={index} className={getCardColors(index, cards[0], cards[1], cards[2])}>
+                |{card}|
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className={`text-lg font-bold mb-8 ${
+          message.includes('おめでとう') ? 'text-green-400' : 'text-red-400'
+        }`}>
+          {message}
+        </p>
+
+        <div className="space-y-4">
+          <button 
+            onClick={startGame}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded"
+          >
+            もう一度チャレンジ
+          </button>
+          
+          <button 
+            onClick={backToStart}
+            className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded ml-4"
+          >
+            メニューに戻る
+          </button>
+        </div>
+      </div>
+    )}
+
+    {gameState === 'stats' && (
+      <div className="text-center">
+        <div className="border-2 border-yellow-400 p-4 mb-8 rounded">
+          <h1 className="text-xl text-yellow-400 mb-2">╔═════════════════════════════════╗</h1>
+          <h1 className="text-xl text-yellow-400 mb-2">║         ゲーム統計           ║</h1>
+          <h1 className="text-xl text-yellow-400">╚═════════════════════════════════╝</h1>
+        </div>
+
+        <div className="bg-gray-900 p-6 rounded-lg mb-8">
+          <div className="space-y-4 text-left">
+            <p className="text-cyan-400">
+              総プレイ回数: <span className="text-white font-bold">{totalPlays}</span>
+            </p>
+            <p className="text-cyan-400">
+              勝利回数: <span className="text-white font-bold">{wins}</span>
+            </p>
+            <p className="text-cyan-400">
+              勝率: <span className="text-white font-bold">{winRate}%</span>
+            </p>
+          </div>
+        </div>
+
+        <button 
+          onClick={backToStart}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+        >
+          メニューに戻る
+        </button>
+      </div>
+    )}
+  </div>
+</div>
+```
+
+);
+};
+
+export default SlotGame;

@@ -1,7 +1,7 @@
 
 # インフラ(シェルスクリプト)
 
-**スクリプトコレクション**
+
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/username/my-infra/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)

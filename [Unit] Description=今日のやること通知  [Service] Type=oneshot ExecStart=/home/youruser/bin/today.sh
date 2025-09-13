@@ -1,5 +1,5 @@
 [Unit]
-Description=今日のやること通知
+Description=今日のやること
 
 [Service]
 Type=oneshot

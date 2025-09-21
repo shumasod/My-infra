@@ -1,7 +1,7 @@
-## データベースとテーブルの作成
+
 
 CREATE DATABASE testdb;
-USE testdb;
+USE model;
 
 CREATE TABLE company (
   company_id INT AUTO_INCREMENT PRIMARY KEY,

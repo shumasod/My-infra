@@ -7,7 +7,7 @@ RED='\033[0;31m'
 WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
-# 門松のアスキーアート
+
 echo -e "${GREEN}"
 cat << "EOF"
 ⠀　　　_〆

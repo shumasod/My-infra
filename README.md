@@ -30,7 +30,7 @@
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/username/my-infra.git
+git clone https://github.com/Shubox/my-infra.git
 
 # 設定スクリプトの実行
 cd my-infra

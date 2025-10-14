@@ -55,4 +55,36 @@ cat <<'EOF'
    ____  _               _                __  __
   / ___|| |__   __ _  __| | ___  _ __ ___|  \/  | __ _ _ __
   \___ \| '_ \ / _` |/ _` |/ _ \| '__/ _ \ |\/| |/ _` | '_ \
-   ___) | | | | (_| | (_| | (_
+   ___) | | | | (_| | (_| | (_) | | |  __/ |  | | (_| | | | |
+  |____/|_| |_|\__,_|\__,_|\___/|_|  \___|_|  |_|\__,_|_| |_|
+     -- improvise, scat, and have fun! --
+EOF
+
+echo
+
+# メインループ — フレーズ生成と表示
+for ((i=0;i<LINES;i++)); do
+  phrase="$(make_phrase)"
+
+  # たまに短いリズムを追加
+  if (( RANDOM % 7 == 0 )); then
+    phrase+=" ♪"
+  fi
+
+  type_out "$phrase"
+
+  # 音を鳴らす（いくつかの周波数でランダムに鳴らす）
+  if [[ "$USE_SOUND" == "true" ]]; then
+    base=$((220 + RANDOM % 330))   # 220Hz〜549Hz の範囲
+    play_tone $base 0.10
+    # たまに短い2音のトリル
+    if (( RANDOM % 4 == 0 )); then
+      play_tone $((base + 60)) 0.07
+    fi
+  fi
+
+  sleep $PAUSE_BETWEEN
+done
+
+echo
+echo "— That's Scatified! —"

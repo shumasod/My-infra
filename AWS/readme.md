@@ -1,4 +1,4 @@
-はい、CloudFormationテンプレートの各コンポーネントについて詳しく解説させていただきます。
+
 
 # 1. Application Load Balancer (ALB)の設定
 

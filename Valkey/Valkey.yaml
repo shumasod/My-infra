@@ -9,7 +9,7 @@
     valkey_version: "8.2.2"
     valkey_port: 6379
     valkey_cluster_enabled: true
-    valkey_cluster_port: 16379
+    valkey_cluster_port: 6379
     valkey_max_memory: "2gb"
     valkey_max_memory_policy: "allkeys-lru"
     valkey_data_dir: "/var/lib/valkey"

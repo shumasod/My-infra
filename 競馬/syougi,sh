@@ -1,0 +1,321 @@
+#!/bin/bash
+
+# 将棋ゲーム - シェルスクリプト版
+# 基本的な将棋の機能を実装
+
+# 色設定
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# 盤面の初期化（9x9）
+declare -A board
+declare -A captured_pieces_sente
+declare -A captured_pieces_gote
+
+# 駒の定義
+declare -A pieces
+pieces[K]="王"  # 王将
+pieces[G]="金"  # 金将
+pieces[S]="銀"  # 銀将
+pieces[N]="桂"  # 桂馬
+pieces[L]="香"  # 香車
+pieces[B]="角"  # 角行
+pieces[R]="飛"  # 飛車
+pieces[P]="歩"  # 歩兵
+
+# 成駒
+pieces[+S]="成銀"
+pieces[+N]="成桂"
+pieces[+L]="成香"
+pieces[+B]="馬"
+pieces[+R]="龍"
+pieces[+P]="と"
+
+current_player="sente"  # sente（先手）またはgote（後手）
+
+# 盤面初期化関数
+init_board() {
+    # 盤面をクリア
+    for i in {1..9}; do
+        for j in {1..9}; do
+            board[$i,$j]=""
+        done
+    done
+    
+    # 後手（上側）の駒配置
+    board[1,1]="gote_L"
+    board[1,2]="gote_N"
+    board[1,3]="gote_S"
+    board[1,4]="gote_G"
+    board[1,5]="gote_K"
+    board[1,6]="gote_G"
+    board[1,7]="gote_S"
+    board[1,8]="gote_N"
+    board[1,9]="gote_L"
+    
+    board[2,2]="gote_B"
+    board[2,8]="gote_R"
+    
+    for j in {1..9}; do
+        board[3,$j]="gote_P"
+    done
+    
+    # 先手（下側）の駒配置
+    for j in {1..9}; do
+        board[7,$j]="sente_P"
+    done
+    
+    board[8,2]="sente_R"
+    board[8,8]="sente_B"
+    
+    board[9,1]="sente_L"
+    board[9,2]="sente_N"
+    board[9,3]="sente_S"
+    board[9,4]="sente_G"
+    board[9,5]="sente_K"
+    board[9,6]="sente_G"
+    board[9,7]="sente_S"
+    board[9,8]="sente_N"
+    board[9,9]="sente_L"
+}
+
+# 盤面表示関数
+display_board() {
+    clear
+    echo -e "${BOLD}将棋ゲーム${NC}"
+    echo "現在の手番: $([ "$current_player" = "sente" ] && echo "先手" || echo "後手")"
+    echo
+    
+    # 列番号（9〜1）
+    echo -n "   "
+    for j in {9..1}; do
+        printf "%2d " $j
+    done
+    echo
+    
+    # 盤面表示
+    for i in {1..9}; do
+        printf "%2d " $i
+        for j in {9..1}; do
+            piece="${board[$i,$j]}"
+            if [ -z "$piece" ]; then
+                echo -n " ・"
+            else
+                player="${piece%_*}"
+                piece_type="${piece#*_}"
+                piece_char="${pieces[$piece_type]}"
+                
+                if [ "$player" = "sente" ]; then
+                    echo -ne "${BLUE}${piece_char}${NC}"
+                else
+                    echo -ne "${RED}${piece_char}${NC}"
+                fi
+            fi
+            echo -n " "
+        done
+        echo
+    done
+    echo
+}
+
+# 駒の移動が有効かチェック
+is_valid_move() {
+    local from_row=$1
+    local from_col=$2
+    local to_row=$3
+    local to_col=$4
+    
+    # 範囲チェック
+    if [ $from_row -lt 1 ] || [ $from_row -gt 9 ] || [ $from_col -lt 1 ] || [ $from_col -gt 9 ] ||
+       [ $to_row -lt 1 ] || [ $to_row -gt 9 ] || [ $to_col -lt 1 ] || [ $to_col -gt 9 ]; then
+        return 1
+    fi
+    
+    # 移動元に駒があるかチェック
+    local piece="${board[$from_row,$from_col]}"
+    if [ -z "$piece" ]; then
+        return 1
+    fi
+    
+    # 自分の駒かチェック
+    local player="${piece%_*}"
+    if [ "$player" != "$current_player" ]; then
+        return 1
+    fi
+    
+    # 移動先に自分の駒がないかチェック
+    local target_piece="${board[$to_row,$to_col]}"
+    if [ -n "$target_piece" ]; then
+        local target_player="${target_piece%_*}"
+        if [ "$target_player" = "$current_player" ]; then
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+# 駒を移動
+move_piece() {
+    local from_row=$1
+    local from_col=$2
+    local to_row=$3
+    local to_col=$4
+    
+    if ! is_valid_move $from_row $from_col $to_row $to_col; then
+        echo "無効な移動です。"
+        return 1
+    fi
+    
+    local piece="${board[$from_row,$from_col]}"
+    local target_piece="${board[$to_row,$to_col]}"
+    
+    # 相手の駒を取る場合
+    if [ -n "$target_piece" ]; then
+        local target_type="${target_piece#*_}"
+        # 成駒は元の駒に戻す
+        case $target_type in
+            "+S") target_type="S" ;;
+            "+N") target_type="N" ;;
+            "+L") target_type="L" ;;
+            "+B") target_type="B" ;;
+            "+R") target_type="R" ;;
+            "+P") target_type="P" ;;
+        esac
+        
+        if [ "$current_player" = "sente" ]; then
+            captured_pieces_sente[$target_type]=$((${captured_pieces_sente[$target_type]:-0} + 1))
+        else
+            captured_pieces_gote[$target_type]=$((${captured_pieces_gote[$target_type]:-0} + 1))
+        fi
+        echo "駒を取りました: ${pieces[$target_type]}"
+    fi
+    
+    # 駒を移動
+    board[$to_row,$to_col]="$piece"
+    board[$from_row,$from_col]=""
+    
+    # 手番交代
+    if [ "$current_player" = "sente" ]; then
+        current_player="gote"
+    else
+        current_player="sente"
+    fi
+    
+    return 0
+}
+
+# ユーザー入力処理
+get_user_input() {
+    local prompt="$1"
+    local input
+    echo -n "$prompt"
+    read input
+    echo "$input"
+}
+
+# 座標解析
+parse_coordinates() {
+    local input="$1"
+    # 形式: "77 76" や "7-7 7-6"
+    local coords=($(echo "$input" | sed 's/[-]/ /g'))
+    
+    if [ ${#coords[@]} -ne 2 ]; then
+        return 1
+    fi
+    
+    local from="${coords[0]}"
+    local to="${coords[1]}"
+    
+    if [ ${#from} -ne 2 ] || [ ${#to} -ne 2 ]; then
+        return 1
+    fi
+    
+    from_col=${from:0:1}
+    from_row=${from:1:1}
+    to_col=${to:0:1}
+    to_row=${to:1:1}
+    
+    return 0
+}
+
+# 持ち駒表示
+display_captured_pieces() {
+    echo "【持ち駒】"
+    echo -n "先手: "
+    for piece in K G S N L B R P; do
+        local count=${captured_pieces_sente[$piece]:-0}
+        if [ $count -gt 0 ]; then
+            echo -n "${pieces[$piece]}x$count "
+        fi
+    done
+    echo
+    
+    echo -n "後手: "
+    for piece in K G S N L B R P; do
+        local count=${captured_pieces_gote[$piece]:-0}
+        if [ $count -gt 0 ]; then
+            echo -n "${pieces[$piece]}x$count "
+        fi
+    done
+    echo
+    echo
+}
+
+# メインゲームループ
+main_game() {
+    init_board
+    
+    while true; do
+        display_board
+        display_captured_pieces
+        
+        local player_name
+        if [ "$current_player" = "sente" ]; then
+            player_name="先手"
+        else
+            player_name="後手"
+        fi
+        
+        echo "コマンド:"
+        echo "  移動: [移動元][移動先] (例: 77 76 または 7-7 7-6)"
+        echo "  終了: quit または q"
+        echo
+        
+        local input=$(get_user_input "${player_name}の番です。コマンドを入力してください: ")
+        
+        case "$input" in
+            "quit"|"q"|"exit")
+                echo "ゲームを終了します。"
+                exit 0
+                ;;
+            *)
+                if parse_coordinates "$input"; then
+                    if move_piece $from_row $from_col $to_row $to_col; then
+                        echo "移動しました: ${from_col}${from_row} → ${to_col}${to_row}"
+                        sleep 1
+                    else
+                        echo "移動に失敗しました。"
+                        sleep 2
+                    fi
+                else
+                    echo "入力形式が正しくありません。例: 77 76"
+                    sleep 2
+                fi
+                ;;
+        esac
+    done
+}
+
+# ゲーム開始
+echo "将棋ゲームへようこそ！"
+echo "操作方法："
+echo "- 移動: 移動元と移動先を指定 (例: 77 76)"
+echo "- 座標は「列行」の順番で指定"
+echo "- 終了: quit または q"
+echo
+read -p "ゲームを開始しますか？ (Enter キーを押してください)"
+
+main_game

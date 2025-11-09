@@ -1,17 +1,6 @@
-#!/bin/ksh
+#!/bin/sh
 #
-# 名前: db_backup_to_s3.ksh
-# 説明: データベースの情報をCSVとしてS3にバックアップするスクリプト
-# 使用方法: ./db_backup_to_s3.ksh [-d database] [-u user] [-p password] [-h host] [-b bucket] [-P prefix] [-r region] [-v]
-#   -d: データベース名 (必須)
-#   -u: データベースユーザー名 (デフォルト: root)
-#   -p: データベースパスワード
-#   -h: データベースホスト (デフォルト: localhost)
-#   -b: S3バケット名 (必須)
-#   -P: S3プレフィックス/パス (デフォルト: backups/db)
-#   -r: AWSリージョン (デフォルト: ap-northeast-1)
-#   -v: 詳細モードを有効にする
-#
+
 
 # エラーハンドリング関数
 error_exit() {

@@ -1,5 +1,8 @@
-CREATE TABLE `new_project.new_dataset.new_table`(
-    column1 DATA_TYPE1,
-    column2 DATA_TYPE2,
-    ...
+CREATE TABLE `my-project.analytics.events` (
+    event_id STRING,
+    user_id INT64,
+    event_type STRING,
+    event_timestamp TIMESTAMP
 )
+PARTITION BY DATE(event_timestamp)
+CLUSTER BY user_id, event_type

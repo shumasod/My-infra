@@ -1,6 +1,6 @@
-  ---
+---
 # Valkey Cache Scaling Management Playbook
-# このプレイブックは Valkey クラスターのスケーリングと管理を行います
+# このプレイブックはValkeyクラスターのスケーリングと管理を行います
 
 - name: Valkey Cache Scaling Management
   hosts: valkey_cluster
@@ -9,7 +9,7 @@
     valkey_version: "8.2.2"
     valkey_port: 6379
     valkey_cluster_enabled: true
-    valkey_cluster_port: 6379
+    valkey_cluster_port: 16379
     valkey_max_memory: "2gb"
     valkey_max_memory_policy: "allkeys-lru"
     valkey_data_dir: "/var/lib/valkey"
@@ -17,26 +17,54 @@
     valkey_config_dir: "/etc/valkey"
     valkey_user: "valkey"
     valkey_group: "valkey"
-
+    valkey_password: ""  # 本番環境では必ず設定してください
+    
     # スケーリング設定
     scale_action: "scale_up"  # scale_up, scale_down, rebalance
     target_node_count: 6
     replication_factor: 1
-
+    
     # パフォーマンス設定
     tcp_backlog: 511
     timeout: 300
     tcp_keepalive: 300
     maxclients: 10000
+    
+    # タイムアウト設定
+    cluster_operation_timeout: 300
+    
+  pre_tasks:
+    - name: 入力パラメータの検証
+      assert:
+        that:
+          - scale_action in ['scale_up', 'scale_down', 'rebalance']
+          - target_node_count | int > 0
+          - target_node_count | int >= 3 or not valkey_cluster_enabled
+          - replication_factor | int >= 0
+          - valkey_port | int > 1024 and valkey_port | int < 65535
+        fail_msg: "無効なパラメータが指定されています"
+        success_msg: "パラメータ検証が成功しました"
 
-  tasks:
-    - name: システム情報の取得 (gather facts)
+    - name: システム情報の取得
       setup:
         gather_subset:
           - network
           - hardware
+          - distribution
 
-    - name: 必要なパッケージのインストール (Debian系)
+    - name: 最小システム要件の確認
+      assert:
+        that:
+          - ansible_memtotal_mb >= 1024
+          - ansible_processor_vcpus >= 1
+        fail_msg: "システムリソースが不足しています（最小要件: 1GB RAM, 1 vCPU）"
+
+  tasks:
+    # ===============================
+    # インストールと初期設定
+    # ===============================
+    
+    - name: 必要なパッケージのインストール (Debian/Ubuntu)
       apt:
         name:
           - build-essential
@@ -44,36 +72,72 @@
           - wget
           - curl
           - net-tools
+          - python3-pip
         state: present
         update_cache: yes
+        cache_valid_time: 3600
       when: ansible_os_family == "Debian"
+      retries: 3
+      delay: 5
+
+    - name: 必要なパッケージのインストール (RedHat/CentOS)
+      yum:
+        name:
+          - gcc
+          - make
+          - tcl
+          - wget
+          - curl
+          - net-tools
+          - python3-pip
+        state: present
+      when: ansible_os_family == "RedHat"
+      retries: 3
+      delay: 5
 
     - name: Valkeyユーザーの作成
       user:
         name: "{{ valkey_user }}"
         system: yes
-        shell: /bin/false
+        shell: /sbin/nologin
         home: "{{ valkey_data_dir }}"
         create_home: no
+        comment: "Valkey Cache Server"
+
+    - name: Valkeyグループの作成
+      group:
+        name: "{{ valkey_group }}"
+        system: yes
+        state: present
 
     - name: 必要なディレクトリの作成
       file:
-        path: "{{ item }}"
+        path: "{{ item.path }}"
         state: directory
         owner: "{{ valkey_user }}"
         group: "{{ valkey_group }}"
-        mode: '0755'
+        mode: "{{ item.mode }}"
       loop:
-        - "{{ valkey_data_dir }}"
-        - "{{ valkey_log_dir }}"
-        - "{{ valkey_config_dir }}"
-        - "/opt/valkey"
+        - { path: "{{ valkey_data_dir }}", mode: "0750" }
+        - { path: "{{ valkey_log_dir }}", mode: "0750" }
+        - { path: "{{ valkey_config_dir }}", mode: "0750" }
+        - { path: "/opt/valkey", mode: "0755" }
+        - { path: "{{ valkey_data_dir }}/backup", mode: "0750" }
+
+    - name: Valkeyバイナリの存在確認
+      stat:
+        path: /usr/local/bin/valkey-server
+      register: valkey_binary
 
     - name: Valkeyのダウンロード
       get_url:
         url: "https://github.com/valkey-io/valkey/archive/{{ valkey_version }}.tar.gz"
         dest: "/tmp/valkey-{{ valkey_version }}.tar.gz"
         mode: '0644'
+        timeout: 60
+      when: not valkey_binary.stat.exists
+      retries: 3
+      delay: 10
 
     - name: Valkeyの展開
       unarchive:
@@ -81,15 +145,37 @@
         dest: "/opt/valkey"
         remote_src: yes
         creates: "/opt/valkey/valkey-{{ valkey_version }}"
+        owner: root
+        group: root
+      when: not valkey_binary.stat.exists
 
     - name: Valkeyのビルド
       shell: |
-        set -e
         cd /opt/valkey/valkey-{{ valkey_version }}
-        make
+        make distclean
+        make -j$(nproc)
         make install PREFIX=/usr/local
       args:
         creates: /usr/local/bin/valkey-server
+        executable: /bin/bash
+      when: not valkey_binary.stat.exists
+      register: build_result
+      failed_when: build_result.rc != 0
+      async: 600
+      poll: 10
+
+    - name: ビルド成果物の確認
+      stat:
+        path: "{{ item }}"
+      register: binary_check
+      loop:
+        - /usr/local/bin/valkey-server
+        - /usr/local/bin/valkey-cli
+      failed_when: not binary_check.stat.exists
+
+    # ===============================
+    # 設定ファイルとサービス
+    # ===============================
 
     - name: Valkey設定ファイルの作成
       template:
@@ -97,7 +183,9 @@
         dest: "{{ valkey_config_dir }}/valkey.conf"
         owner: "{{ valkey_user }}"
         group: "{{ valkey_group }}"
-        mode: '0644'
+        mode: '0640'
+        backup: yes
+        validate: '/usr/local/bin/valkey-server %s --test-memory 1'
       notify: restart valkey
 
     - name: systemdサービスファイルの作成
@@ -105,16 +193,27 @@
         content: |
           [Unit]
           Description=Valkey In-Memory Data Store
-          After=network.target
+          Documentation=https://valkey.io/
+          After=network-online.target
+          Wants=network-online.target
 
           [Service]
           Type=notify
           User={{ valkey_user }}
           Group={{ valkey_group }}
           ExecStart=/usr/local/bin/valkey-server {{ valkey_config_dir }}/valkey.conf
-          ExecStop=/usr/local/bin/valkey-cli shutdown
-          Restart=always
+          ExecStop=/bin/kill -s TERM $MAINPID
+          ExecReload=/bin/kill -s HUP $MAINPID
+          Restart=on-failure
+          RestartSec=5s
+          TimeoutStartSec=30
+          TimeoutStopSec=30
           LimitNOFILE=65535
+          NoNewPrivileges=true
+          PrivateTmp=yes
+          ProtectSystem=strict
+          ProtectHome=yes
+          ReadWritePaths={{ valkey_data_dir }} {{ valkey_log_dir }}
 
           [Install]
           WantedBy=multi-user.target
@@ -122,120 +221,354 @@
         mode: '0644'
       notify: reload systemd
 
+    - name: systemdデーモンのリロード
+      systemd:
+        daemon_reload: yes
+
     - name: Valkeyサービスの有効化と起動
       systemd:
         name: valkey
         enabled: yes
         state: started
-        daemon_reload: yes
+      register: service_start
+      retries: 3
+      delay: 5
+      until: service_start is succeeded
+
+    - name: Valkeyサービスの起動確認
+      wait_for:
+        port: "{{ valkey_port }}"
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 30
+        delay: 2
+
+    # ===============================
+    # クラスター情報の取得
+    # ===============================
+
+    - name: Valkey接続テスト
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} ping
+        {% else %}
+        /usr/local/bin/valkey-cli ping
+        {% endif %}
+      register: ping_result
+      changed_when: false
+      failed_when: "'PONG' not in ping_result.stdout"
+      no_log: "{{ valkey_password | length > 0 }}"
 
     - name: クラスター状態の確認
-      shell: /usr/local/bin/valkey-cli cluster info
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} cluster info 2>/dev/null || echo "cluster_state:not_initialized"
+        {% else %}
+        /usr/local/bin/valkey-cli cluster info 2>/dev/null || echo "cluster_state:not_initialized"
+        {% endif %}
       register: cluster_info
-      ignore_errors: yes
       changed_when: false
+      failed_when: false
+      no_log: "{{ valkey_password | length > 0 }}"
 
     - name: 既存ノード情報の取得
-      shell: /usr/local/bin/valkey-cli cluster nodes
-      register: cluster_nodes
-      ignore_errors: yes
-      changed_when: false
-      when: valkey_cluster_enabled
-
-    - name: 全ノード数とこのホストのインデックスを設定
-      set_fact:
-        valkey_cluster_nodes: "{{ groups['valkey_cluster'] | default([]) }}"
-        node_index: "{{ (groups['valkey_cluster'] | default([])).index(inventory_hostname) if inventory_hostname in (groups['valkey_cluster'] | default([])) else -1 }}"
-        total_nodes: "{{ (groups['valkey_cluster'] | default([])) | length }}"
-      run_once: false
-
-    # スケールアップ処理
-    - name: 新規ノードのクラスター追加 (Scale Up)
       shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} cluster nodes 2>/dev/null || echo ""
+        {% else %}
+        /usr/local/bin/valkey-cli cluster nodes 2>/dev/null || echo ""
+        {% endif %}
+      register: cluster_nodes
+      changed_when: false
+      failed_when: false
+      when: valkey_cluster_enabled
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: クラスター初期化状態の判定
+      set_fact:
+        cluster_initialized: "{{ 'cluster_state:ok' in cluster_info.stdout }}"
+
+    # ===============================
+    # クラスター初期化
+    # ===============================
+
+    - name: クラスターの初期作成
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} --cluster create \
+        {% else %}
+        /usr/local/bin/valkey-cli --cluster create \
+        {% endif %}
+          {% for host in groups['valkey_cluster'][:target_node_count] %}
+          {{ hostvars[host]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
+          {% endfor %}
+          --cluster-replicas {{ replication_factor }} \
+          --cluster-yes
+      when:
+        - valkey_cluster_enabled
+        - not cluster_initialized
+        - inventory_hostname == groups['valkey_cluster'][0]
+      register: cluster_create
+      run_once: true
+      timeout: "{{ cluster_operation_timeout }}"
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: クラスター初期化の待機
+      pause:
+        seconds: 10
+      when:
+        - cluster_create is changed
+        - valkey_cluster_enabled
+
+    # ===============================
+    # スケールアップ処理
+    # ===============================
+
+    - name: 新規ノードのクラスター追加準備
+      set_fact:
+        is_new_node: "{{ inventory_hostname not in (cluster_nodes.stdout | default('')) }}"
+      when:
+        - scale_action == "scale_up"
+        - valkey_cluster_enabled
+        - cluster_initialized
+
+    - name: 新規ノードのクラスター追加
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} --cluster add-node \
+        {% else %}
         /usr/local/bin/valkey-cli --cluster add-node \
+        {% endif %}
           {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }}
       when:
         - scale_action == "scale_up"
-        - node_index >= 0 and node_index >= target_node_count
+        - valkey_cluster_enabled
+        - cluster_initialized
+        - is_new_node | default(false)
       register: add_node_result
-      ignore_errors: yes
+      failed_when:
+        - add_node_result.rc != 0
+        - "'already exists' not in add_node_result.stderr"
+      timeout: "{{ cluster_operation_timeout }}"
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: ノード追加後の待機
+      pause:
+        seconds: 5
+      when: add_node_result is changed
 
     - name: クラスターのリバランス実行
       shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} --cluster rebalance \
+        {% else %}
         /usr/local/bin/valkey-cli --cluster rebalance \
+        {% endif %}
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
-          --cluster-use-empty-masters
-      when: scale_action in ["scale_up", "rebalance"]
+          --cluster-use-empty-masters \
+          --cluster-timeout {{ cluster_operation_timeout }}
+      when:
+        - scale_action in ["scale_up", "rebalance"]
+        - valkey_cluster_enabled
+        - cluster_initialized
       run_once: true
       delegate_to: "{{ groups['valkey_cluster'][0] }}"
+      register: rebalance_result
+      failed_when: rebalance_result.rc != 0
+      timeout: "{{ cluster_operation_timeout }}"
+      no_log: "{{ valkey_password | length > 0 }}"
 
+    # ===============================
     # スケールダウン処理
-    - name: スロットの再配分 (Scale Down準備)
+    # ===============================
+
+    - name: 削除対象ノードの判定
+      set_fact:
+        is_removal_target: "{{ inventory_hostname in groups['valkey_cluster'][target_node_count:] }}"
+      when: scale_action == "scale_down"
+
+    - name: ノードIDの取得
       shell: |
-        set -e
-        NODE_ID=$(/usr/local/bin/valkey-cli cluster nodes | grep -E "myself|{{ ansible_default_ipv4.address }}" | awk '{print $1}' | head -n1)
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} cluster nodes | grep myself | awk '{print $1}'
+        {% else %}
+        /usr/local/bin/valkey-cli cluster nodes | grep myself | awk '{print $1}'
+        {% endif %}
+      register: node_id
+      when:
+        - scale_action == "scale_down"
+        - is_removal_target | default(false)
+      changed_when: false
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: スロットの再配分準備
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} --cluster reshard \
+        {% else %}
         /usr/local/bin/valkey-cli --cluster reshard \
+        {% endif %}
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
-          --cluster-from ${NODE_ID} \
-          --cluster-to {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
-          --cluster-slots 0 \
-          --cluster-yes
+          --cluster-from {{ node_id.stdout }} \
+          --cluster-to all \
+          --cluster-slots $({{ '/usr/local/bin/valkey-cli' }} {{ '-a ' + valkey_password if valkey_password else '' }} cluster nodes | grep {{ node_id.stdout }} | grep -oP '\d+-\d+' | wc -l) \
+          --cluster-yes \
+          --cluster-timeout {{ cluster_operation_timeout }}
       when:
         - scale_action == "scale_down"
-        - node_index >= 0 and node_index >= target_node_count
-      ignore_errors: yes
+        - is_removal_target | default(false)
+        - node_id.stdout is defined
+      register: reshard_result
+      failed_when:
+        - reshard_result.rc != 0
+        - "'No slots to move' not in reshard_result.stdout"
+      timeout: "{{ cluster_operation_timeout }}"
+      no_log: "{{ valkey_password | length > 0 }}"
 
-    - name: ノードのクラスターからの削除 (Scale Down)
+    - name: リシャード後の待機
+      pause:
+        seconds: 10
+      when: reshard_result is changed
+
+    - name: ノードのクラスターからの削除
       shell: |
-        set -e
-        NODE_ID=$(/usr/local/bin/valkey-cli cluster nodes | grep '{{ ansible_default_ipv4.address }}' | awk '{print $1}' | head -n1)
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} --cluster del-node \
+        {% else %}
         /usr/local/bin/valkey-cli --cluster del-node \
+        {% endif %}
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
-          ${NODE_ID}
+          {{ node_id.stdout }}
       when:
         - scale_action == "scale_down"
-        - node_index >= 0 and node_index >= target_node_count
+        - is_removal_target | default(false)
+        - node_id.stdout is defined
       delegate_to: "{{ groups['valkey_cluster'][0] }}"
-      ignore_errors: yes
+      register: del_node_result
+      failed_when:
+        - del_node_result.rc != 0
+        - "'does not know' not in del_node_result.stderr"
+      timeout: 60
+      no_log: "{{ valkey_password | length > 0 }}"
 
+    - name: 削除されたノードのサービス停止
+      systemd:
+        name: valkey
+        state: stopped
+      when:
+        - scale_action == "scale_down"
+        - is_removal_target | default(false)
+        - del_node_result is succeeded
+
+    # ===============================
     # レプリケーション設定
+    # ===============================
+
     - name: レプリカノードの設定
       shell: |
-        set -e
-        MASTER_ID=$(/usr/local/bin/valkey-cli -h {{ hostvars[item]['ansible_default_ipv4']['address'] }} cluster nodes | grep "master" | head -1 | awk '{print $1}')
-        /usr/local/bin/valkey-cli --cluster add-node \
-          {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
-          {{ hostvars[item]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
-          --cluster-slave \
-          --cluster-master-id ${MASTER_ID}
+        MASTER_ID=$(/usr/local/bin/valkey-cli {{ '-a ' + valkey_password if valkey_password else '' }} \
+          -h {{ hostvars[item]['ansible_default_ipv4']['address'] }} \
+          cluster nodes | grep master | grep -v fail | head -1 | awk '{print $1}')
+        
+        if [ -n "$MASTER_ID" ]; then
+          /usr/local/bin/valkey-cli {{ '-a ' + valkey_password if valkey_password else '' }} --cluster add-node \
+            {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
+            {{ hostvars[item]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
+            --cluster-slave \
+            --cluster-master-id ${MASTER_ID}
+        else
+          echo "マスターIDが見つかりません"
+          exit 1
+        fi
       loop: "{{ groups['valkey_masters'] | default([]) }}"
       when:
-        - (inventory_hostname in (groups['valkey_replicas'] | default([]))) and (replication_factor | int > 0)
-      ignore_errors: yes
+        - inventory_hostname in groups['valkey_replicas'] | default([])
+        - replication_factor | int > 0
+        - valkey_cluster_enabled
+      register: replica_setup
+      failed_when:
+        - replica_setup.rc != 0
+        - "'already replicates' not in replica_setup.stderr"
+      no_log: "{{ valkey_password | length > 0 }}"
 
-    # モニタリングと健全性チェック
+    # ===============================
+    # 健全性チェックとモニタリング
+    # ===============================
+
     - name: クラスター健全性チェック
-      shell: /usr/local/bin/valkey-cli --cluster check {{ ansible_default_ipv4.address }}:{{ valkey_port }}
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} --cluster check {{ ansible_default_ipv4.address }}:{{ valkey_port }}
+        {% else %}
+        /usr/local/bin/valkey-cli --cluster check {{ ansible_default_ipv4.address }}:{{ valkey_port }}
+        {% endif %}
       register: health_check
       changed_when: false
-      failed_when: >
-        (health_check.stderr is defined and 'ERR' in health_check.stderr) or
-        (health_check.stdout is defined and 'ERR' in health_check.stdout)
+      failed_when:
+        - health_check.rc != 0
+        - "'[OK]' not in health_check.stdout"
+      when: valkey_cluster_enabled
+      no_log: "{{ valkey_password | length > 0 }}"
 
     - name: メモリ使用状況の確認
-      shell: /usr/local/bin/valkey-cli info memory | grep used_memory_human || true
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} info memory | grep -E 'used_memory_human|maxmemory_human'
+        {% else %}
+        /usr/local/bin/valkey-cli info memory | grep -E 'used_memory_human|maxmemory_human'
+        {% endif %}
       register: memory_usage
       changed_when: false
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: レプリケーション状態の確認
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} info replication
+        {% else %}
+        /usr/local/bin/valkey-cli info replication
+        {% endif %}
+      register: replication_status
+      changed_when: false
+      when: replication_factor | int > 0
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: クライアント接続数の確認
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} info clients | grep connected_clients
+        {% else %}
+        /usr/local/bin/valkey-cli info clients | grep connected_clients
+        {% endif %}
+      register: client_connections
+      changed_when: false
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    # ===============================
+    # 結果レポート
+    # ===============================
 
     - name: スケーリング結果の表示
       debug:
         msg:
-          - "クラスター状態: {{ health_check.stdout_lines | default([]) }}"
-          - "メモリ使用量: {{ memory_usage.stdout | default('N/A') }}"
+          - "=============================================="
+          - "Valkeyクラスター スケーリング結果"
+          - "=============================================="
           - "スケーリングアクション: {{ scale_action }}"
           - "ターゲットノード数: {{ target_node_count }}"
-          - "このホストのインデックス: {{ node_index }} / トータル: {{ total_nodes }}"
+          - "レプリケーション係数: {{ replication_factor }}"
+          - "----------------------------------------------"
+          - "クラスター状態:"
+          - "{{ health_check.stdout_lines | default(['スタンドアロンモード']) }}"
+          - "----------------------------------------------"
+          - "メモリ使用状況:"
+          - "{{ memory_usage.stdout_lines }}"
+          - "----------------------------------------------"
+          - "クライアント接続数:"
+          - "{{ client_connections.stdout }}"
+          - "=============================================="
+      run_once: true
+      delegate_to: localhost
 
   handlers:
     - name: reload systemd
@@ -246,8 +579,27 @@
       systemd:
         name: valkey
         state: restarted
+      listen: restart valkey
 
     - name: stop valkey
       systemd:
         name: valkey
         state: stopped
+
+  post_tasks:
+    - name: 最終健全性チェック
+      shell: |
+        {% if valkey_password %}
+        /usr/local/bin/valkey-cli -a {{ valkey_password }} ping
+        {% else %}
+        /usr/local/bin/valkey-cli ping
+        {% endif %}
+      register: final_check
+      changed_when: false
+      failed_when: "'PONG' not in final_check.stdout"
+      no_log: "{{ valkey_password | length > 0 }}"
+
+    - name: 操作完了メッセージ
+      debug:
+        msg: "Valkeyクラスターのスケーリング操作が正常に完了しました"
+      run_once: true

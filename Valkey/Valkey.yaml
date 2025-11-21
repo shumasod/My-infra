@@ -1,6 +1,6 @@
----
+  ---
 # Valkey Cache Scaling Management Playbook
-# このプレイブックはValkeyクラスターのスケーリングと管理を行います
+# このプレイブックは Valkey クラスターのスケーリングと管理を行います
 
 - name: Valkey Cache Scaling Management
   hosts: valkey_cluster
@@ -17,26 +17,26 @@
     valkey_config_dir: "/etc/valkey"
     valkey_user: "valkey"
     valkey_group: "valkey"
-    
+
     # スケーリング設定
     scale_action: "scale_up"  # scale_up, scale_down, rebalance
     target_node_count: 6
     replication_factor: 1
-    
+
     # パフォーマンス設定
     tcp_backlog: 511
     timeout: 300
     tcp_keepalive: 300
     maxclients: 10000
-    
+
   tasks:
-    - name: システム情報の取得
+    - name: システム情報の取得 (gather facts)
       setup:
         gather_subset:
           - network
           - hardware
 
-    - name: 必要なパッケージのインストール
+    - name: 必要なパッケージのインストール (Debian系)
       apt:
         name:
           - build-essential
@@ -84,6 +84,7 @@
 
     - name: Valkeyのビルド
       shell: |
+        set -e
         cd /opt/valkey/valkey-{{ valkey_version }}
         make
         make install PREFIX=/usr/local
@@ -141,15 +142,22 @@
       changed_when: false
       when: valkey_cluster_enabled
 
+    - name: 全ノード数とこのホストのインデックスを設定
+      set_fact:
+        valkey_cluster_nodes: "{{ groups['valkey_cluster'] | default([]) }}"
+        node_index: "{{ (groups['valkey_cluster'] | default([])).index(inventory_hostname) if inventory_hostname in (groups['valkey_cluster'] | default([])) else -1 }}"
+        total_nodes: "{{ (groups['valkey_cluster'] | default([])) | length }}"
+      run_once: false
+
     # スケールアップ処理
     - name: 新規ノードのクラスター追加 (Scale Up)
       shell: |
         /usr/local/bin/valkey-cli --cluster add-node \
           {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }}
-      when: 
+      when:
         - scale_action == "scale_up"
-        - inventory_hostname not in groups['valkey_cluster'][:target_node_count]
+        - node_index >= 0 and node_index >= target_node_count
       register: add_node_result
       ignore_errors: yes
 
@@ -165,63 +173,69 @@
     # スケールダウン処理
     - name: スロットの再配分 (Scale Down準備)
       shell: |
-        NODE_ID=$(valkey-cli cluster nodes | grep myself | awk '{print $1}')
+        set -e
+        NODE_ID=$(/usr/local/bin/valkey-cli cluster nodes | grep -E "myself|{{ ansible_default_ipv4.address }}" | awk '{print $1}' | head -n1)
         /usr/local/bin/valkey-cli --cluster reshard \
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
           --cluster-from ${NODE_ID} \
           --cluster-to {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
           --cluster-slots 0 \
           --cluster-yes
-      when: 
+      when:
         - scale_action == "scale_down"
-        - inventory_hostname in groups['valkey_cluster'][target_node_count:]
+        - node_index >= 0 and node_index >= target_node_count
       ignore_errors: yes
 
     - name: ノードのクラスターからの削除 (Scale Down)
       shell: |
-        NODE_ID=$(valkey-cli cluster nodes | grep {{ ansible_default_ipv4.address }} | awk '{print $1}')
+        set -e
+        NODE_ID=$(/usr/local/bin/valkey-cli cluster nodes | grep '{{ ansible_default_ipv4.address }}' | awk '{print $1}' | head -n1)
         /usr/local/bin/valkey-cli --cluster del-node \
           {{ hostvars[groups['valkey_cluster'][0]]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
           ${NODE_ID}
-      when: 
+      when:
         - scale_action == "scale_down"
-        - inventory_hostname in groups['valkey_cluster'][target_node_count:]
+        - node_index >= 0 and node_index >= target_node_count
       delegate_to: "{{ groups['valkey_cluster'][0] }}"
       ignore_errors: yes
 
     # レプリケーション設定
     - name: レプリカノードの設定
       shell: |
-        MASTER_ID=$(valkey-cli -h {{ hostvars[item]['ansible_default_ipv4']['address'] }} cluster nodes | grep master | head -1 | awk '{print $1}')
+        set -e
+        MASTER_ID=$(/usr/local/bin/valkey-cli -h {{ hostvars[item]['ansible_default_ipv4']['address'] }} cluster nodes | grep "master" | head -1 | awk '{print $1}')
         /usr/local/bin/valkey-cli --cluster add-node \
           {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
           {{ hostvars[item]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
           --cluster-slave \
           --cluster-master-id ${MASTER_ID}
       loop: "{{ groups['valkey_masters'] | default([]) }}"
-      when: 
-        - inventory_hostname in groups['valkey_replicas'] | default([])
-        - replication_factor > 0
+      when:
+        - (inventory_hostname in (groups['valkey_replicas'] | default([]))) and (replication_factor | int > 0)
+      ignore_errors: yes
 
     # モニタリングと健全性チェック
     - name: クラスター健全性チェック
       shell: /usr/local/bin/valkey-cli --cluster check {{ ansible_default_ipv4.address }}:{{ valkey_port }}
       register: health_check
       changed_when: false
-      failed_when: "'ERR' in health_check.stderr"
+      failed_when: >
+        (health_check.stderr is defined and 'ERR' in health_check.stderr) or
+        (health_check.stdout is defined and 'ERR' in health_check.stdout)
 
     - name: メモリ使用状況の確認
-      shell: /usr/local/bin/valkey-cli info memory | grep used_memory_human
+      shell: /usr/local/bin/valkey-cli info memory | grep used_memory_human || true
       register: memory_usage
       changed_when: false
 
     - name: スケーリング結果の表示
       debug:
         msg:
-          - "クラスター状態: {{ health_check.stdout_lines }}"
-          - "メモリ使用量: {{ memory_usage.stdout }}"
+          - "クラスター状態: {{ health_check.stdout_lines | default([]) }}"
+          - "メモリ使用量: {{ memory_usage.stdout | default('N/A') }}"
           - "スケーリングアクション: {{ scale_action }}"
           - "ターゲットノード数: {{ target_node_count }}"
+          - "このホストのインデックス: {{ node_index }} / トータル: {{ total_nodes }}"
 
   handlers:
     - name: reload systemd

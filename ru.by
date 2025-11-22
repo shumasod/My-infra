@@ -1,0 +1,34 @@
+# Vagrantfile
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  # 基本設定
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.box_check_update = false
+
+  # 3ノードのクラスターを構築
+  (1..3).each do |i|
+    config.vm.define "valkey-node#{i}" do |node|
+      node.vm.hostname = "valkey-node#{i}"
+      node.vm.network "private_network", ip: "192.168.56.#{100+i}"
+      
+      node.vm.provider "virtualbox" do |vb|
+        vb.name = "valkey-node#{i}"
+        vb.memory = "1024"
+        vb.cpus = 1
+        vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      end
+
+      # 最後のノードでのみプロビジョニング
+      if i == 3
+        node.vm.provision "ansible" do |ansible|
+          ansible.limit = "all"
+          ansible.playbook = "site.yml"
+          ansible.inventory_path = "inventory/test.ini"
+          ansible.verbose = "v"
+        end
+      end
+    end
+  end
+end

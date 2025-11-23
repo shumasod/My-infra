@@ -1,32 +1,62 @@
 #!/bin/bash
+set -euo pipefail
 
-# Script to set up a basic quiz system
-# This script creates directories and files for a Japanese quiz application
+# 日本語クイズシステムのセットアップスクリプト
+# ディレクトリ構造とクイズアプリケーションの初期設定を作成
 
-# Create main directories
-mkdir -p japanese_quiz/{questions,answers,data}
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly QUIZ_ROOT="japanese_quiz"
+readonly CATEGORIES=("grammar" "vocabulary" "reading" "logic" "math" "culture")
 
-# Create question categories
-CATEGORIES=("grammar" "vocabulary" "reading" "logic" "math" "culture")
+# エラーハンドリング
+trap 'echo "エラーが発生しました (行: $LINENO)" >&2; exit 1' ERR
 
-for category in "${CATEGORIES[@]}"; do
-    mkdir -p japanese_quiz/questions/$category
-    mkdir -p japanese_quiz/answers/$category
-    echo "Created category: $category"
-done
+# ディレクトリ構造を作成
+create_directory_structure() {
+    local base_dir="$1"
+    
+    echo "ディレクトリ構造を作成中..."
+    mkdir -p "${base_dir}"/{questions,answers,data}
+    
+    for category in "${CATEGORIES[@]}"; do
+        mkdir -p "${base_dir}/questions/${category}"
+        mkdir -p "${base_dir}/answers/${category}"
+        echo "  ✓ カテゴリを作成: ${category}"
+    done
+}
 
-# Create initial config file
-cat > japanese_quiz/config.sh << EOL
+# 設定ファイルを作成
+create_config_file() {
+    local config_path="$1/config.sh"
+    
+    echo "設定ファイルを作成中..."
+    cat > "${config_path}" << 'EOL'
 #!/bin/bash
 # Configuration for Japanese Quiz Application
 
-QUIZ_NAME="Japanese Proficiency Test Practice"
-QUIZ_VERSION="1.0"
-LANGUAGE="ja_JP"
-MAX_QUESTIONS_PER_SESSION=10
-RANDOMIZE_QUESTIONS=true
-SHOW_CORRECT_ANSWERS=true
+readonly QUIZ_NAME="Japanese Proficiency Test Practice"
+readonly QUIZ_VERSION="1.0"
+readonly LANGUAGE="ja_JP"
+readonly MAX_QUESTIONS_PER_SESSION=10
+readonly RANDOMIZE_QUESTIONS=true
+readonly SHOW_CORRECT_ANSWERS=true
 EOL
+    
+    chmod +x "${config_path}"
+    echo "  ✓ 設定ファイルを作成: ${config_path}"
+}
 
-chmod +x japanese_quiz/config.sh
-echo "Quiz setup complete!"
+# メイン処理
+main() {
+    echo "=== 日本語クイズシステムのセットアップ ==="
+    echo
+    
+    create_directory_structure "${QUIZ_ROOT}"
+    create_config_file "${QUIZ_ROOT}"
+    
+    echo
+    echo "✅ セットアップが完了しました!"
+    echo "   場所: ${QUIZ_ROOT}/"
+}
+
+main "$@"

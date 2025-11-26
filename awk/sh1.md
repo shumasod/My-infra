@@ -4,8 +4,6 @@
  * 
  * PHPアプリケーションからAWKコマンドを実行するためのラッパークラス
  * 
- * @author Claude
- * @version 1.1.0
  */
 class AwkUtil
 {

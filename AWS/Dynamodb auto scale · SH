@@ -1,0 +1,143 @@
+#!/bin/bash
+
+#############################################
+# DynamoDB Auto Scaling Script
+# 読み取り/書き込みキャパシティの自動調整
+#############################################
+
+set -e
+
+# 設定値
+TABLE_NAME="${1:-your-table-name}"
+REGION="${AWS_REGION:-ap-northeast-1}"
+READ_THRESHOLD_HIGH=70  # 読み取り使用率の上限閾値(%)
+READ_THRESHOLD_LOW=30   # 読み取り使用率の下限閾値(%)
+WRITE_THRESHOLD_HIGH=70 # 書き込み使用率の上限閾値(%)
+WRITE_THRESHOLD_LOW=30  # 書き込み使用率の下限閾値(%)
+SCALE_UP_FACTOR=1.5     # スケールアップ倍率
+SCALE_DOWN_FACTOR=0.7   # スケールダウン倍率
+MIN_CAPACITY=5          # 最小キャパシティ
+MAX_CAPACITY=100        # 最大キャパシティ
+LOG_FILE="/var/log/dynamodb_autoscale.log"
+
+# ログ関数
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# CloudWatchメトリクス取得（5分間の平均）
+get_metric() {
+    local metric_name=$1
+    local start_time=$(date -u -d '5 minutes ago' '+%Y-%m-%dT%H:%M:%S')
+    local end_time=$(date -u '+%Y-%m-%dT%H:%M:%S')
+    
+    aws cloudwatch get-metric-statistics \
+        --namespace AWS/DynamoDB \
+        --metric-name "$metric_name" \
+        --dimensions Name=TableName,Value="$TABLE_NAME" \
+        --start-time "$start_time" \
+        --end-time "$end_time" \
+        --period 300 \
+        --statistics Average \
+        --region "$REGION" \
+        --query 'Datapoints[0].Average' \
+        --output text
+}
+
+# 現在のキャパシティ取得
+get_current_capacity() {
+    local capacity_type=$1  # ReadCapacityUnits or WriteCapacityUnits
+    
+    aws dynamodb describe-table \
+        --table-name "$TABLE_NAME" \
+        --region "$REGION" \
+        --query "Table.ProvisionedThroughput.$capacity_type" \
+        --output text
+}
+
+# キャパシティ更新
+update_capacity() {
+    local read_capacity=$1
+    local write_capacity=$2
+    
+    log "キャパシティ更新: Read=$read_capacity, Write=$write_capacity"
+    
+    aws dynamodb update-table \
+        --table-name "$TABLE_NAME" \
+        --provisioned-throughput ReadCapacityUnits="$read_capacity",WriteCapacityUnits="$write_capacity" \
+        --region "$REGION"
+}
+
+# キャパシティ計算
+calculate_new_capacity() {
+    local current=$1
+    local usage=$2
+    local threshold_high=$3
+    local threshold_low=$4
+    local new_capacity=$current
+    
+    if (( $(echo "$usage > $threshold_high" | bc -l) )); then
+        new_capacity=$(echo "$current * $SCALE_UP_FACTOR" | bc | awk '{print int($1+0.5)}')
+        log "使用率高($usage%) - スケールアップ"
+    elif (( $(echo "$usage < $threshold_low" | bc -l) )); then
+        new_capacity=$(echo "$current * $SCALE_DOWN_FACTOR" | bc | awk '{print int($1+0.5)}')
+        log "使用率低($usage%) - スケールダウン"
+    fi
+    
+    # 最小/最大値の制限
+    if [ "$new_capacity" -lt "$MIN_CAPACITY" ]; then
+        new_capacity=$MIN_CAPACITY
+    elif [ "$new_capacity" -gt "$MAX_CAPACITY" ]; then
+        new_capacity=$MAX_CAPACITY
+    fi
+    
+    echo "$new_capacity"
+}
+
+# メイン処理
+main() {
+    log "========== DynamoDB Auto Scaling 開始 =========="
+    log "テーブル名: $TABLE_NAME"
+    
+    # 現在のキャパシティ取得
+    current_read=$(get_current_capacity "ReadCapacityUnits")
+    current_write=$(get_current_capacity "WriteCapacityUnits")
+    log "現在のキャパシティ - Read: $current_read, Write: $current_write"
+    
+    # 使用率取得
+    consumed_read=$(get_metric "ConsumedReadCapacityUnits")
+    consumed_write=$(get_metric "ConsumedWriteCapacityUnits")
+    
+    if [ "$consumed_read" == "None" ] || [ "$consumed_write" == "None" ]; then
+        log "メトリクスデータが取得できませんでした"
+        exit 1
+    fi
+    
+    # 使用率計算
+    read_usage=$(echo "scale=2; ($consumed_read / $current_read) * 100" | bc)
+    write_usage=$(echo "scale=2; ($consumed_write / $current_write) * 100" | bc)
+    log "使用率 - Read: ${read_usage}%, Write: ${write_usage}%"
+    
+    # 新しいキャパシティ計算
+    new_read=$(calculate_new_capacity "$current_read" "$read_usage" "$READ_THRESHOLD_HIGH" "$READ_THRESHOLD_LOW")
+    new_write=$(calculate_new_capacity "$current_write" "$write_usage" "$WRITE_THRESHOLD_HIGH" "$WRITE_THRESHOLD_LOW")
+    
+    # キャパシティ変更が必要か確認
+    if [ "$new_read" != "$current_read" ] || [ "$new_write" != "$current_write" ]; then
+        update_capacity "$new_read" "$new_write"
+        log "キャパシティを更新しました"
+        
+        # Slack通知（オプション）
+        if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -X POST "$SLACK_WEBHOOK_URL" \
+                -H 'Content-Type: application/json' \
+                -d "{\"text\":\"DynamoDB Auto Scaling\\nTable: $TABLE_NAME\\nRead: $current_read → $new_read\\nWrite: $current_write → $new_write\"}"
+        fi
+    else
+        log "キャパシティ変更は不要です"
+    fi
+    
+    log "========== DynamoDB Auto Scaling 完了 =========="
+}
+
+main

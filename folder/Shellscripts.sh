@@ -2,7 +2,7 @@
 
 while true
 do
-  echo "僕はシェルスクリプトです"
+  echo "シェルスクリプトです"
   sleep 300 # 5分(300秒)待機
 done
 

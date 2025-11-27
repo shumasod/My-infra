@@ -1,7 +1,7 @@
 
-# 🚀 My-infra
+# シェルスクリプト
 
-**業務効率化のための統合スクリプトコレクション**
+
 
 [![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/username/my-infra/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -24,15 +24,13 @@
 - [ライセンス](#ライセンス)
 - [連絡先](#連絡先)
 
-## 概要
-
-My-infraは、情報システム部門の日常業務を自動化し、効率化するためのスクリプトコレクションです。データ処理、バックアップ、PC設定、定期タスクなど、幅広い業務に対応し、工数削減と品質向上を実現します。
+効率化するためのスクリプトコレクションです。データ処理、バックアップ、PC設定、定期タスクなど、幅広い業務に対応し、工数削減と品質向上を実現します。
 
 ## インストール方法
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/username/my-infra.git
+git clone https://github.com/Shubox/my-infra.git
 
 # 設定スクリプトの実行
 cd my-infra

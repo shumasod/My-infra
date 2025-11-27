@@ -1,0 +1,220 @@
+#!/bin/bash
+
+#############################################
+# ElastiCache Auto Scaling Script
+# CPU/メモリ使用率に基づくノード数の自動調整
+#############################################
+
+set -e
+
+# 設定値
+CLUSTER_ID="${1:-your-cluster-id}"
+REPLICATION_GROUP_ID="${2:-your-replication-group-id}"
+REGION="${AWS_REGION:-ap-northeast-1}"
+CPU_THRESHOLD_HIGH=75       # CPU使用率の上限閾値(%)
+CPU_THRESHOLD_LOW=30        # CPU使用率の下限閾値(%)
+MEMORY_THRESHOLD_HIGH=80    # メモリ使用率の上限閾値(%)
+MEMORY_THRESHOLD_LOW=40     # メモリ使用率の下限閾値(%)
+MIN_NODES=2                 # 最小ノード数
+MAX_NODES=6                 # 最大ノード数
+SCALE_COOLDOWN=300          # スケーリング後のクールダウン時間(秒)
+LOG_FILE="/var/log/elasticache_autoscale.log"
+STATE_FILE="/tmp/elasticache_last_scale.txt"
+
+# ログ関数
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# CloudWatchメトリクス取得（5分間の平均）
+get_cache_metric() {
+    local metric_name=$1
+    local node_id=$2
+    local start_time=$(date -u -d '5 minutes ago' '+%Y-%m-%dT%H:%M:%S')
+    local end_time=$(date -u '+%Y-%m-%dT%H:%M:%S')
+    
+    aws cloudwatch get-metric-statistics \
+        --namespace AWS/ElastiCache \
+        --metric-name "$metric_name" \
+        --dimensions Name=CacheClusterId,Value="$node_id" \
+        --start-time "$start_time" \
+        --end-time "$end_time" \
+        --period 300 \
+        --statistics Average \
+        --region "$REGION" \
+        --query 'Datapoints[0].Average' \
+        --output text
+}
+
+# 現在のノード数取得
+get_current_node_count() {
+    aws elasticache describe-replication-groups \
+        --replication-group-id "$REPLICATION_GROUP_ID" \
+        --region "$REGION" \
+        --query 'ReplicationGroups[0].MemberClusters | length(@)' \
+        --output text
+}
+
+# ノードリスト取得
+get_node_list() {
+    aws elasticache describe-replication-groups \
+        --replication-group-id "$REPLICATION_GROUP_ID" \
+        --region "$REGION" \
+        --query 'ReplicationGroups[0].MemberClusters[]' \
+        --output text
+}
+
+# 全ノードの平均メトリクス取得
+get_average_metrics() {
+    local nodes=$(get_node_list)
+    local total_cpu=0
+    local total_memory=0
+    local node_count=0
+    
+    for node in $nodes; do
+        local cpu=$(get_cache_metric "CPUUtilization" "$node")
+        local memory=$(get_cache_metric "DatabaseMemoryUsagePercentage" "$node")
+        
+        if [ "$cpu" != "None" ] && [ "$memory" != "None" ]; then
+            total_cpu=$(echo "$total_cpu + $cpu" | bc)
+            total_memory=$(echo "$total_memory + $memory" | bc)
+            node_count=$((node_count + 1))
+        fi
+    done
+    
+    if [ "$node_count" -gt 0 ]; then
+        local avg_cpu=$(echo "scale=2; $total_cpu / $node_count" | bc)
+        local avg_memory=$(echo "scale=2; $total_memory / $node_count" | bc)
+        echo "$avg_cpu $avg_memory"
+    else
+        echo "None None"
+    fi
+}
+
+# クールダウン確認
+check_cooldown() {
+    if [ -f "$STATE_FILE" ]; then
+        local last_scale=$(cat "$STATE_FILE")
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - last_scale))
+        
+        if [ "$elapsed" -lt "$SCALE_COOLDOWN" ]; then
+            log "クールダウン期間中です（残り$((SCALE_COOLDOWN - elapsed))秒）"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# スケールアウト（ノード追加）
+scale_out() {
+    local current_nodes=$1
+    local new_nodes=$((current_nodes + 1))
+    
+    if [ "$new_nodes" -gt "$MAX_NODES" ]; then
+        log "最大ノード数に到達しています"
+        return 1
+    fi
+    
+    log "スケールアウト実行: $current_nodes → $new_nodes ノード"
+    
+    aws elasticache increase-replica-count \
+        --replication-group-id "$REPLICATION_GROUP_ID" \
+        --new-replica-count $((new_nodes - 1)) \
+        --apply-immediately \
+        --region "$REGION"
+    
+    date +%s > "$STATE_FILE"
+    return 0
+}
+
+# スケールイン（ノード削除）
+scale_in() {
+    local current_nodes=$1
+    local new_nodes=$((current_nodes - 1))
+    
+    if [ "$new_nodes" -lt "$MIN_NODES" ]; then
+        log "最小ノード数に到達しています"
+        return 1
+    fi
+    
+    log "スケールイン実行: $current_nodes → $new_nodes ノード"
+    
+    aws elasticache decrease-replica-count \
+        --replication-group-id "$REPLICATION_GROUP_ID" \
+        --new-replica-count $((new_nodes - 1)) \
+        --apply-immediately \
+        --region "$REGION"
+    
+    date +%s > "$STATE_FILE"
+    return 0
+}
+
+# Slack通知
+send_slack_notification() {
+    local message=$1
+    
+    if [ -n "$SLACK_WEBHOOK_URL" ]; then
+        curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"ElastiCache Auto Scaling\\n$message\"}"
+    fi
+}
+
+# メイン処理
+main() {
+    log "========== ElastiCache Auto Scaling 開始 =========="
+    log "レプリケーショングループ: $REPLICATION_GROUP_ID"
+    
+    # 現在のノード数取得
+    current_nodes=$(get_current_node_count)
+    log "現在のノード数: $current_nodes"
+    
+    # 平均メトリクス取得
+    metrics=$(get_average_metrics)
+    avg_cpu=$(echo "$metrics" | awk '{print $1}')
+    avg_memory=$(echo "$metrics" | awk '{print $2}')
+    
+    if [ "$avg_cpu" == "None" ] || [ "$avg_memory" == "None" ]; then
+        log "メトリクスデータが取得できませんでした"
+        exit 1
+    fi
+    
+    log "平均CPU使用率: ${avg_cpu}%"
+    log "平均メモリ使用率: ${avg_memory}%"
+    
+    # スケーリング判定
+    should_scale_out=false
+    should_scale_in=false
+    
+    if (( $(echo "$avg_cpu > $CPU_THRESHOLD_HIGH" | bc -l) )) || \
+       (( $(echo "$avg_memory > $MEMORY_THRESHOLD_HIGH" | bc -l) )); then
+        should_scale_out=true
+        log "高負荷検出 - スケールアウトが必要"
+    elif (( $(echo "$avg_cpu < $CPU_THRESHOLD_LOW" | bc -l) )) && \
+         (( $(echo "$avg_memory < $MEMORY_THRESHOLD_LOW" | bc -l) )); then
+        should_scale_in=true
+        log "低負荷検出 - スケールインが可能"
+    else
+        log "現在の負荷は適切な範囲内です"
+    fi
+    
+    # スケーリング実行
+    if [ "$should_scale_out" = true ]; then
+        if check_cooldown; then
+            if scale_out "$current_nodes"; then
+                send_slack_notification "スケールアウト完了\\nノード数: $current_nodes → $((current_nodes + 1))\\nCPU: ${avg_cpu}%, メモリ: ${avg_memory}%"
+            fi
+        fi
+    elif [ "$should_scale_in" = true ]; then
+        if check_cooldown; then
+            if scale_in "$current_nodes"; then
+                send_slack_notification "スケールイン完了\\nノード数: $current_nodes → $((current_nodes - 1))\\nCPU: ${avg_cpu}%, メモリ: ${avg_memory}%"
+            fi
+        fi
+    fi
+    
+    log "========== ElastiCache Auto Scaling 完了 =========="
+}
+
+main

@@ -1,0 +1,446 @@
+# site.yml
+---
+- name: Valkey Cluster Setup - Phase 1 (System Preparation)
+  hosts: valkey_cluster
+  become: yes
+  gather_facts: yes
+  tags: [phase1, system]
+  
+  tasks:
+    - name: システム情報の表示
+      debug:
+        msg:
+          - "ホスト名: {{ ansible_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "メモリ: {{ ansible_memtotal_mb }}MB"
+          - "CPU: {{ ansible_processor_vcpus }}"
+
+    - name: 必要なパッケージのインストール
+      apt:
+        name:
+          - build-essential
+          - tcl
+          - tcl-dev
+          - wget
+          - curl
+          - git
+          - pkg-config
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600
+      retries: 3
+      delay: 5
+
+    - name: システムの設定 - vm.overcommit_memory
+      sysctl:
+        name: vm.overcommit_memory
+        value: '1'
+        state: present
+        reload: yes
+
+    - name: システムの設定 - net.core.somaxconn
+      sysctl:
+        name: net.core.somaxconn
+        value: '65535'
+        state: present
+        reload: yes
+
+    - name: Transparent Huge Pagesの無効化
+      shell: |
+        echo never > /sys/kernel/mm/transparent_hugepage/enabled
+        echo never > /sys/kernel/mm/transparent_hugepage/defrag
+      changed_when: false
+
+    - name: THP無効化の永続化
+      lineinfile:
+        path: /etc/rc.local
+        line: "{{ item }}"
+        create: yes
+        mode: '0755'
+      loop:
+        - '#!/bin/bash'
+        - 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+        - 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+
+- name: Valkey Cluster Setup - Phase 2 (Installation)
+  hosts: valkey_cluster
+  become: yes
+  gather_facts: yes
+  tags: [phase2, install]
+  
+  vars:
+    valkey_version: "7.2.5"
+    valkey_user: valkey
+    valkey_group: valkey
+    valkey_port: 6379
+    valkey_data_dir: /var/lib/valkey
+    valkey_log_dir: /var/log/valkey
+    valkey_config_dir: /etc/valkey
+    valkey_working_dir: /var/lib/valkey
+  
+  tasks:
+    - name: Valkeyユーザーの作成
+      user:
+        name: "{{ valkey_user }}"
+        system: yes
+        shell: /usr/sbin/nologin
+        home: "{{ valkey_data_dir }}"
+        create_home: no
+        comment: "Valkey Server"
+
+    - name: 必要なディレクトリの作成
+      file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ valkey_data_dir }}", owner: "{{ valkey_user }}", group: "{{ valkey_group }}", mode: "0750" }
+        - { path: "{{ valkey_log_dir }}", owner: "{{ valkey_user }}", group: "{{ valkey_group }}", mode: "0750" }
+        - { path: "{{ valkey_config_dir }}", owner: "{{ valkey_user }}", group: "{{ valkey_group }}", mode: "0750" }
+        - { path: "/opt/valkey", owner: "root", group: "root", mode: "0755" }
+
+    - name: Valkeyバイナリの存在確認
+      stat:
+        path: /usr/local/bin/valkey-server
+      register: valkey_binary_check
+
+    - name: Valkeyのダウンロード
+      get_url:
+        url: "https://github.com/valkey-io/valkey/archive/refs/tags/{{ valkey_version }}.tar.gz"
+        dest: "/tmp/valkey-{{ valkey_version }}.tar.gz"
+        mode: '0644'
+        timeout: 120
+      when: not valkey_binary_check.stat.exists
+      register: download_result
+      retries: 3
+      delay: 10
+
+    - name: ダウンロード結果の確認
+      debug:
+        msg: "ダウンロード: {{ 'スキップ（既にインストール済み）' if valkey_binary_check.stat.exists else 'OK' }}"
+
+    - name: Valkeyの展開
+      unarchive:
+        src: "/tmp/valkey-{{ valkey_version }}.tar.gz"
+        dest: "/opt/valkey"
+        remote_src: yes
+        creates: "/opt/valkey/valkey-{{ valkey_version }}"
+        owner: root
+        group: root
+      when: not valkey_binary_check.stat.exists
+
+    - name: Valkeyのビルド
+      shell: |
+        cd /opt/valkey/valkey-{{ valkey_version }}
+        make distclean || true
+        make -j$(nproc)
+        make install PREFIX=/usr/local
+      args:
+        executable: /bin/bash
+        creates: /usr/local/bin/valkey-server
+      when: not valkey_binary_check.stat.exists
+      register: build_result
+      async: 900
+      poll: 10
+
+    - name: ビルド結果の表示
+      debug:
+        var: build_result
+      when: build_result is changed
+
+    - name: Valkeyバイナリの確認
+      command: /usr/local/bin/valkey-server --version
+      register: valkey_version_check
+      changed_when: false
+
+    - name: インストールされたバージョンの表示
+      debug:
+        msg: "{{ valkey_version_check.stdout }}"
+
+- name: Valkey Cluster Setup - Phase 3 (Configuration)
+  hosts: valkey_cluster
+  become: yes
+  gather_facts: yes
+  tags: [phase3, config]
+  
+  vars:
+    valkey_port: 6379
+    valkey_cluster_bus_port: 16379
+    valkey_config_dir: /etc/valkey
+    valkey_data_dir: /var/lib/valkey
+    valkey_log_dir: /var/log/valkey
+    valkey_user: valkey
+    valkey_group: valkey
+    valkey_max_memory: 512mb
+    valkey_cluster_enabled: yes
+  
+  tasks:
+    - name: Valkey設定ファイルの作成
+      copy:
+        content: |
+          # Valkey Configuration File
+          # Generated by Ansible
+          
+          # Network
+          bind 0.0.0.0
+          port {{ valkey_port }}
+          protected-mode yes
+          tcp-backlog 511
+          timeout 0
+          tcp-keepalive 300
+          
+          # General
+          daemonize no
+          supervised systemd
+          pidfile /var/run/valkey/valkey-{{ valkey_port }}.pid
+          loglevel notice
+          logfile {{ valkey_log_dir }}/valkey.log
+          databases 16
+          
+          # Snapshotting
+          save 900 1
+          save 300 10
+          save 60 10000
+          stop-writes-on-bgsave-error yes
+          rdbcompression yes
+          rdbchecksum yes
+          dbfilename dump.rdb
+          dir {{ valkey_data_dir }}
+          
+          # Replication
+          replica-serve-stale-data yes
+          replica-read-only yes
+          repl-diskless-sync no
+          repl-diskless-sync-delay 5
+          repl-disable-tcp-nodelay no
+          replica-priority 100
+          
+          # Security
+          # requirepass yourpassword
+          
+          # Limits
+          maxclients 10000
+          maxmemory {{ valkey_max_memory }}
+          maxmemory-policy allkeys-lru
+          
+          # Cluster
+          {% if valkey_cluster_enabled %}
+          cluster-enabled yes
+          cluster-config-file nodes-{{ valkey_port }}.conf
+          cluster-node-timeout 15000
+          cluster-replica-validity-factor 10
+          cluster-migration-barrier 1
+          cluster-require-full-coverage yes
+          {% endif %}
+          
+          # Append Only Mode
+          appendonly no
+          appendfilename "appendonly.aof"
+          appendfsync everysec
+          no-appendfsync-on-rewrite no
+          auto-aof-rewrite-percentage 100
+          auto-aof-rewrite-min-size 64mb
+          
+          # Slow Log
+          slowlog-log-slower-than 10000
+          slowlog-max-len 128
+        dest: "{{ valkey_config_dir }}/valkey.conf"
+        owner: "{{ valkey_user }}"
+        group: "{{ valkey_group }}"
+        mode: '0640'
+        backup: yes
+
+    - name: PIDディレクトリの作成
+      file:
+        path: /var/run/valkey
+        state: directory
+        owner: "{{ valkey_user }}"
+        group: "{{ valkey_group }}"
+        mode: '0755'
+
+    - name: systemdサービスファイルの作成
+      copy:
+        content: |
+          [Unit]
+          Description=Valkey In-Memory Data Store
+          Documentation=https://valkey.io/
+          After=network-online.target
+          Wants=network-online.target
+          
+          [Service]
+          Type=notify
+          User={{ valkey_user }}
+          Group={{ valkey_group }}
+          ExecStart=/usr/local/bin/valkey-server {{ valkey_config_dir }}/valkey.conf --supervised systemd
+          ExecStop=/bin/kill -s TERM $MAINPID
+          Restart=on-failure
+          RestartSec=5s
+          TimeoutStartSec=infinity
+          TimeoutStopSec=30
+          LimitNOFILE=65535
+          RuntimeDirectory=valkey
+          RuntimeDirectoryMode=0755
+          
+          # Security
+          NoNewPrivileges=true
+          PrivateTmp=yes
+          
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/valkey.service
+        mode: '0644'
+      notify: reload systemd
+
+    - name: systemdデーモンのリロード
+      systemd:
+        daemon_reload: yes
+
+    - name: Valkeyサービスの有効化と起動
+      systemd:
+        name: valkey
+        enabled: yes
+        state: started
+      register: service_start
+
+    - name: サービス起動の待機
+      wait_for:
+        port: "{{ valkey_port }}"
+        host: "{{ ansible_default_ipv4.address }}"
+        timeout: 30
+        delay: 2
+
+    - name: Valkey接続テスト
+      command: /usr/local/bin/valkey-cli -h {{ ansible_default_ipv4.address }} -p {{ valkey_port }} ping
+      register: ping_result
+      changed_when: false
+      failed_when: "'PONG' not in ping_result.stdout"
+
+    - name: 接続テスト結果
+      debug:
+        msg: "接続テスト: {{ ping_result.stdout }}"
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+- name: Valkey Cluster Setup - Phase 4 (Cluster Creation)
+  hosts: valkey_cluster
+  become: yes
+  gather_facts: yes
+  tags: [phase4, cluster]
+  
+  vars:
+    valkey_port: 6379
+  
+  tasks:
+    - name: クラスター状態の確認
+      shell: /usr/local/bin/valkey-cli -p {{ valkey_port }} cluster info 2>&1 || echo "not_enabled"
+      register: cluster_status
+      changed_when: false
+      failed_when: false
+
+    - name: クラスター状態の表示
+      debug:
+        var: cluster_status.stdout_lines
+
+    - name: クラスターの作成（最初のノードから実行）
+      shell: |
+        /usr/local/bin/valkey-cli --cluster create \
+          {% for host in groups['valkey_cluster'] %}
+          {{ hostvars[host]['ansible_default_ipv4']['address'] }}:{{ valkey_port }} \
+          {% endfor %}
+          --cluster-replicas 0 \
+          --cluster-yes
+      when:
+        - inventory_hostname == groups['valkey_cluster'][0]
+        - "'cluster_state:ok' not in cluster_status.stdout"
+      register: cluster_create
+      run_once: true
+
+    - name: クラスター作成結果の表示
+      debug:
+        var: cluster_create
+      when: cluster_create is changed
+
+    - name: クラスター初期化の待機
+      pause:
+        seconds: 10
+      when: cluster_create is changed
+
+    - name: 最終的なクラスター状態の確認
+      shell: /usr/local/bin/valkey-cli --cluster check {{ ansible_default_ipv4.address }}:{{ valkey_port }}
+      register: final_cluster_status
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ groups['valkey_cluster'][0] }}"
+
+    - name: 最終クラスター状態の表示
+      debug:
+        var: final_cluster_status.stdout_lines
+      run_once: true
+
+- name: Valkey Cluster Setup - Phase 5 (Verification)
+  hosts: valkey_cluster
+  become: yes
+  gather_facts: yes
+  tags: [phase5, verify]
+  
+  vars:
+    valkey_port: 6379
+  
+  tasks:
+    - name: クラスターノード情報の取得
+      shell: /usr/local/bin/valkey-cli -p {{ valkey_port }} cluster nodes
+      register: cluster_nodes
+      changed_when: false
+
+    - name: クラスターノード情報の表示
+      debug:
+        msg: "{{ cluster_nodes.stdout_lines }}"
+
+    - name: メモリ使用状況の確認
+      shell: /usr/local/bin/valkey-cli -p {{ valkey_port }} info memory | grep -E 'used_memory_human|maxmemory_human'
+      register: memory_info
+      changed_when: false
+
+    - name: メモリ情報の表示
+      debug:
+        msg: "{{ memory_info.stdout_lines }}"
+
+    - name: テストデータの書き込み（最初のノードのみ）
+      shell: |
+        for i in {1..10}; do
+          /usr/local/bin/valkey-cli -c -p {{ valkey_port }} set "test:key:$i" "value:$i"
+        done
+      when: inventory_hostname == groups['valkey_cluster'][0]
+      register: test_write
+      changed_when: true
+
+    - name: テストデータの読み込み確認
+      shell: /usr/local/bin/valkey-cli -c -p {{ valkey_port }} get test:key:1
+      register: test_read
+      changed_when: false
+
+    - name: テスト結果の表示
+      debug:
+        msg: "読み込みテスト結果: {{ test_read.stdout }}"
+
+    - name: クラスター情報のサマリー
+      shell: /usr/local/bin/valkey-cli --cluster info {{ ansible_default_ipv4.address }}:{{ valkey_port }}
+      register: cluster_summary
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ groups['valkey_cluster'][0] }}"
+
+    - name: 最終レポート
+      debug:
+        msg:
+          - "=========================================="
+          - "Valkeyクラスター セットアップ完了"
+          - "=========================================="
+          - "{{ cluster_summary.stdout_lines }}"
+          - "=========================================="
+      run_once: true

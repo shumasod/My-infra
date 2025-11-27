@@ -1,6 +1,32 @@
+-- CSV形式でエクスポート
 EXPORT DATA OPTIONS(
-    uri='gs://your-bucket/export/*.parquet'
+    uri='gs://your-bucket/export/*.csv',
+    format='CSV',
+    overwrite=true,
+    header=true,
+    field_delimiter=','
 ) AS
 SELECT * 
 FROM `your-project.your_dataset.your_table`
-WHERE partition_column = '20230501'
+WHERE partition_column = '2023-05-01';
+
+-- JSON形式でエクスポート
+EXPORT DATA OPTIONS(
+    uri='gs://your-bucket/export/*.json',
+    format='JSON',
+    overwrite=true
+) AS
+SELECT * 
+FROM `your-project.your_dataset.your_table`
+WHERE partition_column = '2023-05-01';
+
+-- 圧縮を含むParquet
+EXPORT DATA OPTIONS(
+    uri='gs://your-bucket/export/*.parquet',
+    format='PARQUET',
+    overwrite=true,
+    compression='SNAPPY'
+) AS
+SELECT * 
+FROM `your-project.your_dataset.your_table`
+WHERE partition_column = '2023-05-01';

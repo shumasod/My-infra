@@ -1,0 +1,309 @@
+name: Security Tests
+
+on:
+  push:
+    branches: [ main, master, claude/** ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # 毎日午前3時（JST 12時）にセキュリティスキャン実行
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # 手動実行を許可
+
+jobs:
+  # ===== 認証情報スキャン =====
+  credential-scan:
+    name: 認証情報漏洩スキャン
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全履歴を取得（git-secretsに必要）
+
+      - name: BATSのインストール
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: 認証情報スキャンテストの実行
+        run: |
+          if [ -f tests/security/test_credential_exposure.bats ]; then
+            bats tests/security/test_credential_exposure.bats
+          else
+            echo "警告: 認証情報スキャンテストが見つかりません"
+            exit 1
+          fi
+
+      - name: gitleaksのインストールと実行
+        run: |
+          # gitleaksをインストール
+          wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.1/gitleaks_8.18.1_linux_x64.tar.gz
+          tar -xzf gitleaks_8.18.1_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+
+          # gitleaksでスキャン
+          gitleaks detect --source . --report-format json --report-path gitleaks-report.json || true
+
+          # レポートの確認
+          if [ -f gitleaks-report.json ] && [ -s gitleaks-report.json ]; then
+            echo "⚠️ 認証情報の漏洩が検出されました！"
+            cat gitleaks-report.json
+            exit 1
+          else
+            echo "✅ 認証情報の漏洩は検出されませんでした"
+          fi
+
+      - name: レポートのアップロード
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+
+  # ===== シェルスクリプト静的解析 =====
+  shellcheck:
+    name: シェルスクリプト静的解析
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: shellcheckのインストール
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: 重要なスクリプトのshellcheck実行
+        run: |
+          echo "🔍 重要なスクリプトをチェック中..."
+
+          # 重要なディレクトリのスクリプトをチェック
+          CRITICAL_DIRS=("DB" "deploy" "server" "security" "AWS")
+          ISSUES_FOUND=0
+
+          for dir in "${CRITICAL_DIRS[@]}"; do
+            if [ -d "$dir" ]; then
+              echo "📂 $dir をチェック中..."
+
+              # SC2086 (変数クォート), SC2068 (配列展開), SC2046 (コマンド置換) を重点チェック
+              if find "$dir" -name "*.sh" -type f -exec shellcheck \
+                --severity=warning \
+                --shell=bash \
+                --enable=all \
+                --format=gcc {} + 2>&1 | tee shellcheck-${dir}.log; then
+                echo "✅ $dir: 問題なし"
+              else
+                echo "❌ $dir: 問題が検出されました"
+                ISSUES_FOUND=1
+              fi
+            fi
+          done
+
+          if [ $ISSUES_FOUND -eq 1 ]; then
+            echo "⚠️ シェルスクリプトに問題が見つかりました"
+            exit 1
+          fi
+
+      - name: shellcheckレポートのアップロード
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: shellcheck-reports
+          path: shellcheck-*.log
+
+  # ===== コマンドインジェクションテスト =====
+  command-injection-tests:
+    name: コマンドインジェクション検査
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: BATSのインストール
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+
+      - name: コマンドインジェクションテストの実行
+        run: |
+          if [ -f tests/security/test_command_injection.bats ]; then
+            bats tests/security/test_command_injection.bats
+          else
+            echo "警告: コマンドインジェクションテストが見つかりません"
+            exit 1
+          fi
+
+  # ===== Python入力検証テスト =====
+  python-security-tests:
+    name: Python入力検証テスト
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Pythonのセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: 依存関係のインストール
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install pytest pytest-cov bandit safety
+
+      - name: 入力検証テストの実行
+        run: |
+          if [ -f tests/security/test_input_validation.py ]; then
+            python -m pytest tests/security/test_input_validation.py -v --tb=short
+          else
+            echo "警告: 入力検証テストが見つかりません"
+          fi
+
+      - name: Bandit セキュリティスキャン
+        run: |
+          echo "🔒 Pythonコードのセキュリティスキャン中..."
+          bandit -r . \
+            -f json \
+            -o bandit-report.json \
+            --exclude ./tests,./venv,./env \
+            -ll || true
+
+          # 高・中レベルの問題を表示
+          if [ -f bandit-report.json ]; then
+            python3 << 'EOF'
+import json
+import sys
+
+with open('bandit-report.json', 'r') as f:
+    report = json.load(f)
+
+high = [r for r in report['results'] if r['issue_severity'] == 'HIGH']
+medium = [r for r in report['results'] if r['issue_severity'] == 'MEDIUM']
+
+if high:
+    print(f"\n❌ 高レベルのセキュリティ問題: {len(high)}")
+    for issue in high:
+        print(f"  - {issue['filename']}:{issue['line_number']} - {issue['issue_text']}")
+
+if medium:
+    print(f"\n⚠️  中レベルのセキュリティ問題: {len(medium)}")
+    for issue in medium[:5]:  # 最初の5件のみ表示
+        print(f"  - {issue['filename']}:{issue['line_number']} - {issue['issue_text']}")
+
+if high:
+    sys.exit(1)
+EOF
+          fi
+
+      - name: Safety 依存関係脆弱性チェック
+        run: |
+          pip freeze > requirements-frozen.txt
+          safety check --file requirements-frozen.txt --json || true
+
+      - name: セキュリティレポートのアップロード
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-security-reports
+          path: |
+            bandit-report.json
+            requirements-frozen.txt
+
+  # ===== 依存関係の脆弱性スキャン =====
+  dependency-scan:
+    name: 依存関係脆弱性スキャン
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Trivyのインストール
+        run: |
+          wget https://github.com/aquasecurity/trivy/releases/download/v0.48.0/trivy_0.48.0_Linux-64bit.tar.gz
+          tar -xzf trivy_0.48.0_Linux-64bit.tar.gz
+          sudo mv trivy /usr/local/bin/
+
+      - name: ファイルシステムスキャン
+        run: |
+          trivy fs --severity HIGH,CRITICAL --format json --output trivy-report.json . || true
+
+          # 結果の表示
+          if [ -f trivy-report.json ]; then
+            echo "📊 脆弱性スキャン結果:"
+            trivy fs --severity HIGH,CRITICAL --format table .
+          fi
+
+      - name: Trivyレポートのアップロード
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-report
+          path: trivy-report.json
+
+  # ===== OWASP Dependency Check =====
+  owasp-dependency-check:
+    name: OWASP依存関係チェック
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: リポジトリのチェックアウト
+        uses: actions/checkout@v4
+
+      - name: OWASP Dependency-Checkの実行
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'My-infra'
+          path: '.'
+          format: 'HTML'
+          args: >
+            --failOnCVSS 7
+            --enableRetired
+
+      - name: レポートのアップロード
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-check-report
+          path: reports
+
+  # ===== セキュリティサマリー =====
+  security-summary:
+    name: セキュリティテストサマリー
+    runs-on: ubuntu-latest
+    needs: [credential-scan, shellcheck, command-injection-tests, python-security-tests, dependency-scan]
+    if: always()
+
+    steps:
+      - name: サマリー生成
+        run: |
+          echo "# 🔒 セキュリティテスト結果" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## テスト実行状況" >> $GITHUB_STEP_SUMMARY
+          echo "- 認証情報スキャン: ${{ needs.credential-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- シェルスクリプト静的解析: ${{ needs.shellcheck.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- コマンドインジェクション検査: ${{ needs.command-injection-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Python入力検証: ${{ needs.python-security-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 依存関係スキャン: ${{ needs.dependency-scan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # 失敗したテストをハイライト
+          if [ "${{ needs.credential-scan.result }}" != "success" ] || \
+             [ "${{ needs.shellcheck.result }}" != "success" ] || \
+             [ "${{ needs.command-injection-tests.result }}" != "success" ] || \
+             [ "${{ needs.python-security-tests.result }}" != "success" ]; then
+            echo "## ⚠️ セキュリティ問題が検出されました" >> $GITHUB_STEP_SUMMARY
+            echo "詳細は各ジョブのログを確認してください。" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "## ✅ すべてのセキュリティテストが成功しました" >> $GITHUB_STEP_SUMMARY
+          fi

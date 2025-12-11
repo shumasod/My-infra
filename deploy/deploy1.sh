@@ -1,490 +1,527 @@
-#!/bin/bash
+#!/usr/bin/env python3
+"""
+SaaSアカウント一括作成ツール
 
-# ヘルスチェック・モニタリングスクリプト
-# 使用例: ansible all -m script -a "health_monitor.sh check all"
+APIを使用してSaaSアカウントを一括作成し、結果をCSVに保存する。
 
-set -euo pipefail
+Usage:
+    python saas_account_creator.py --count 10 --output accounts.csv
+    python saas_account_creator.py --input users.csv
+"""
 
-# 引数チェック
-if [ $# -lt 2 ]; then
-    echo "Usage: $0 <action> <target> [options]"
-    echo "Actions: check, monitor, alert, report"
-    echo "Targets: all, system, services, database, network, disk, security"
-    echo "Options: --threshold=N, --output=json, --silent"
-    exit 1
-fi
+from __future__ import annotations
 
-ACTION="$1"
-TARGET="$2"
-OUTPUT_FORMAT="text"
-SILENT=false
-CPU_THRESHOLD=80
-MEMORY_THRESHOLD=85
-DISK_THRESHOLD=90
-LOG_FILE="/var/log/health_monitor.log"
-REPORT_FILE="/tmp/health_report_$(date +%Y%m%d_%H%M%S).json"
+import argparse
+import csv
+import hashlib
+import logging
+import os
+import sys
+import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, Iterator
 
-# オプション解析
-shift 2
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --threshold=*)
-            CPU_THRESHOLD="${1#*=}"
-            MEMORY_THRESHOLD="${1#*=}"
-            ;;
-        --output=*)
-            OUTPUT_FORMAT="${1#*=}"
-            ;;
-        --silent)
-            SILENT=true
-            ;;
-        *)
-            echo "Unknown option: $1"
-            exit 1
-            ;;
-    esac
-    shift
-done
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-# ログ関数
-log() {
-    if [ "$SILENT" = false ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
-    else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
-    fi
-}
+# =============================================================================
+# Configuration
+# =============================================================================
 
-# JSON出力初期化
-init_json_report() {
-    cat > "$REPORT_FILE" <<EOF
-{
-    "timestamp": "$(date -Iseconds)",
-    "hostname": "$(hostname)",
-    "checks": {
-EOF
-}
 
-# JSON出力終了
-finalize_json_report() {
-    # 最後のカンマを削除
-    sed -i '$ s/,$//' "$REPORT_FILE"
-    cat >> "$REPORT_FILE" <<EOF
-    },
-    "summary": {
-        "total_checks": $total_checks,
-        "passed_checks": $passed_checks,
-        "failed_checks": $failed_checks,
-        "overall_status": "$overall_status"
-    }
-}
-EOF
-}
+@dataclass(frozen=True)
+class ApiConfig:
+    """API設定"""
 
-# チェック結果をJSONに追加
-add_json_result() {
-    local check_name="$1"
-    local status="$2"
-    local message="$3"
-    local value="${4:-null}"
-    
-    cat >> "$REPORT_FILE" <<EOF
-        "$check_name": {
-            "status": "$status",
-            "message": "$message",
-            "value": $value,
-            "timestamp": "$(date -Iseconds)"
-        },
-EOF
-}
+    base_url: str
+    timeout: int = 30
+    max_retries: int = 3
+    backoff_factor: float = 0.5
 
-# システムリソースチェック
-check_system_resources() {
-    log "Checking system resources"
-    
-    # CPU使用率
-    local cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
-    cpu_usage=${cpu_usage:-0}
-    
-    if (( $(echo "$cpu_usage > $CPU_THRESHOLD" | bc -l) )); then
-        log "WARNING: High CPU usage: ${cpu_usage}%"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "cpu_usage" "warning" "High CPU usage" "$cpu_usage"
+    @classmethod
+    def from_env(cls) -> ApiConfig:
+        """環境変数から設定を読み込み"""
+        base_url = os.getenv("SAAS_API_URL")
+        if not base_url:
+            raise ValueError("環境変数 SAAS_API_URL が設定されていません")
+
+        return cls(
+            base_url=base_url,
+            timeout=int(os.getenv("SAAS_API_TIMEOUT", "30")),
+            max_retries=int(os.getenv("SAAS_API_MAX_RETRIES", "3")),
+        )
+
+
+@dataclass
+class ProcessConfig:
+    """処理設定"""
+
+    rate_limit_seconds: float = 3.0
+    batch_size: int = 100
+    output_path: Path = field(default_factory=lambda: Path("saas_accounts.csv"))
+    continue_on_error: bool = True
+
+
+# =============================================================================
+# Domain Models
+# =============================================================================
+
+
+class AccountStatus(Enum):
+    """アカウント作成ステータス"""
+
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+@dataclass
+class AccountRequest:
+    """アカウント作成リクエスト"""
+
+    username: str
+    email: str
+    password: str
+
+    def __post_init__(self) -> None:
+        if not self.username:
+            raise ValueError("username は必須です")
+        if not self.email or "@" not in self.email:
+            raise ValueError("有効な email が必要です")
+        if not self.password or len(self.password) < 8:
+            raise ValueError("password は8文字以上必要です")
+
+
+@dataclass
+class AccountResult:
+    """アカウント作成結果"""
+
+    username: str
+    email: str
+    status: AccountStatus
+    account_id: str | None = None
+    error_message: str | None = None
+    created_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """辞書に変換"""
+        return {
+            "username": self.username,
+            "email": self.email,
+            "status": self.status.value,
+            "account_id": self.account_id or "",
+            "error_message": self.error_message or "",
+            "created_at": self.created_at or "",
+        }
+
+
+# =============================================================================
+# Security
+# =============================================================================
+
+
+class PasswordHasher(ABC):
+    """パスワードハッシャーの基底クラス"""
+
+    @abstractmethod
+    def hash(self, password: str) -> str:
+        """パスワードをハッシュ化"""
+
+
+class Sha256Hasher(PasswordHasher):
+    """SHA-256ハッシャー（デモ用、本番ではbcrypt等を使用）"""
+
+    def hash(self, password: str) -> str:
+        return hashlib.sha256(password.encode()).hexdigest()
+
+
+# =============================================================================
+# API Client
+# =============================================================================
+
+
+class SaasApiClient:
+    """SaaS API クライアント"""
+
+    def __init__(
+        self,
+        config: ApiConfig,
+        hasher: PasswordHasher | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self._config = config
+        self._hasher = hasher or Sha256Hasher()
+        self._logger = logger or logging.getLogger(__name__)
+        self._session = self._create_session()
+
+    def _create_session(self) -> requests.Session:
+        """リトライ設定付きセッションを作成"""
+        session = requests.Session()
+
+        retry_strategy = Retry(
+            total=self._config.max_retries,
+            backoff_factor=self._config.backoff_factor,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        return session
+
+    def create_account(self, request: AccountRequest) -> AccountResult:
+        """アカウントを作成"""
+        payload = {
+            "username": request.username,
+            "email": request.email,
+            "password": self._hasher.hash(request.password),
+        }
+
+        try:
+            response = self._session.post(
+                self._config.base_url,
+                json=payload,
+                timeout=self._config.timeout,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            return AccountResult(
+                username=request.username,
+                email=request.email,
+                status=AccountStatus.SUCCESS,
+                account_id=data.get("id") or data.get("account_id"),
+                created_at=datetime.now().isoformat(),
+            )
+
+        except requests.exceptions.HTTPError as e:
+            error_msg = self._extract_error_message(e)
+            self._logger.warning("HTTP エラー (%s): %s", request.username, error_msg)
+            return AccountResult(
+                username=request.username,
+                email=request.email,
+                status=AccountStatus.FAILED,
+                error_message=error_msg,
+            )
+
+        except requests.exceptions.RequestException as e:
+            self._logger.warning("リクエストエラー (%s): %s", request.username, e)
+            return AccountResult(
+                username=request.username,
+                email=request.email,
+                status=AccountStatus.FAILED,
+                error_message=str(e),
+            )
+
+    def _extract_error_message(self, error: requests.exceptions.HTTPError) -> str:
+        """HTTPエラーからメッセージを抽出"""
+        try:
+            data = error.response.json()
+            return data.get("message") or data.get("error") or str(error)
+        except (ValueError, AttributeError):
+            return f"HTTP {error.response.status_code}"
+
+    def close(self) -> None:
+        """セッションを閉じる"""
+        self._session.close()
+
+    def __enter__(self) -> SaasApiClient:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
+
+
+# =============================================================================
+# Account Generator
+# =============================================================================
+
+
+def generate_accounts(count: int, prefix: str = "user") -> Iterator[AccountRequest]:
+    """テスト用アカウントを生成"""
+    for i in range(count):
+        yield AccountRequest(
+            username=f"{prefix}{i}",
+            email=f"{prefix}{i}@example.com",
+            password=f"SecurePass{i}!@#",
+        )
+
+
+def load_accounts_from_csv(path: Path) -> Iterator[AccountRequest]:
+    """CSVからアカウント情報を読み込み"""
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            yield AccountRequest(
+                username=row["username"],
+                email=row["email"],
+                password=row["password"],
+            )
+
+
+# =============================================================================
+# Processor
+# =============================================================================
+
+
+@dataclass
+class ProcessingStats:
+    """処理統計"""
+
+    total: int = 0
+    success: int = 0
+    failed: int = 0
+    skipped: int = 0
+
+    def __str__(self) -> str:
+        success_rate = (self.success / self.total * 100) if self.total > 0 else 0
+        return (
+            f"合計: {self.total}, 成功: {self.success}, "
+            f"失敗: {self.failed}, スキップ: {self.skipped}, "
+            f"成功率: {success_rate:.1f}%"
+        )
+
+
+class AccountProcessor:
+    """アカウント一括作成プロセッサー"""
+
+    def __init__(
+        self,
+        client: SaasApiClient,
+        config: ProcessConfig,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self._client = client
+        self._config = config
+        self._logger = logger or logging.getLogger(__name__)
+        self._results: list[AccountResult] = []
+        self._stats = ProcessingStats()
+
+    def process(self, requests: Iterator[AccountRequest]) -> ProcessingStats:
+        """アカウントを一括作成"""
+        request_list = list(requests)
+        total = len(request_list)
+        self._stats.total = total
+
+        self._logger.info("アカウント作成開始: %d 件", total)
+
+        for i, request in enumerate(request_list, 1):
+            self._process_single(request, i, total)
+
+            # レート制限
+            if i < total:
+                time.sleep(self._config.rate_limit_seconds)
+
+        self._logger.info("処理完了: %s", self._stats)
+        return self._stats
+
+    def _process_single(
+        self,
+        request: AccountRequest,
+        current: int,
+        total: int,
+    ) -> None:
+        """単一アカウントを処理"""
+        self._logger.info(
+            "処理中 [%d/%d]: %s",
+            current,
+            total,
+            request.username,
+        )
+
+        try:
+            result = self._client.create_account(request)
+            self._results.append(result)
+            self._update_stats(result.status)
+
+            if result.status == AccountStatus.SUCCESS:
+                self._logger.info("✓ 作成成功: %s", request.username)
+            else:
+                self._logger.warning(
+                    "✗ 作成失敗: %s - %s",
+                    request.username,
+                    result.error_message,
+                )
+
+        except Exception as e:
+            self._logger.error("予期しないエラー (%s): %s", request.username, e)
+            self._results.append(
+                AccountResult(
+                    username=request.username,
+                    email=request.email,
+                    status=AccountStatus.FAILED,
+                    error_message=str(e),
+                )
+            )
+            self._stats.failed += 1
+
+            if not self._config.continue_on_error:
+                raise
+
+    def _update_stats(self, status: AccountStatus) -> None:
+        """統計を更新"""
+        if status == AccountStatus.SUCCESS:
+            self._stats.success += 1
+        elif status == AccountStatus.FAILED:
+            self._stats.failed += 1
+        elif status == AccountStatus.SKIPPED:
+            self._stats.skipped += 1
+
+    def save_results(self, path: Path | None = None) -> Path:
+        """結果をCSVに保存"""
+        output_path = path or self._config.output_path
+
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            if not self._results:
+                return output_path
+
+            fieldnames = list(self._results[0].to_dict().keys())
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(r.to_dict() for r in self._results)
+
+        self._logger.info("結果を保存: %s", output_path)
+        return output_path
+
+    @property
+    def results(self) -> list[AccountResult]:
+        return self._results.copy()
+
+
+# =============================================================================
+# Logging Setup
+# =============================================================================
+
+
+def setup_logging(verbose: bool = False) -> logging.Logger:
+    """ロガーをセットアップ"""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    return logging.getLogger(__name__)
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+
+def parse_args() -> argparse.Namespace:
+    """コマンドライン引数をパース"""
+    parser = argparse.ArgumentParser(
+        description="SaaSアカウント一括作成ツール",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
+        "--count", "-n",
+        type=int,
+        help="生成するアカウント数",
+    )
+    source_group.add_argument(
+        "--input", "-i",
+        type=Path,
+        help="アカウント情報のCSVファイル",
+    )
+
+    parser.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=Path("saas_accounts.csv"),
+        help="出力CSVファイル (default: saas_accounts.csv)",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=float,
+        default=3.0,
+        help="リクエスト間隔（秒） (default: 3.0)",
+    )
+    parser.add_argument(
+        "--prefix",
+        default="user",
+        help="生成ユーザー名のプレフィックス (default: user)",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="詳細ログ出力",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="実際のAPI呼び出しを行わない",
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    """メインエントリーポイント"""
+    args = parse_args()
+    logger = setup_logging(args.verbose)
+
+    try:
+        # 設定読み込み
+        api_config = ApiConfig.from_env()
+        process_config = ProcessConfig(
+            rate_limit_seconds=args.rate_limit,
+            output_path=args.output,
+        )
+
+        # アカウントソース決定
+        if args.count:
+            accounts = generate_accounts(args.count, args.prefix)
+        else:
+            if not args.input.exists():
+                logger.error("入力ファイルが見つかりません: %s", args.input)
+                return 1
+            accounts = load_accounts_from_csv(args.input)
+
+        # Dry-runモード
+        if args.dry_run:
+            logger.info("=== Dry-run モード ===")
+            for i, acc in enumerate(accounts, 1):
+                logger.info("[%d] %s <%s>", i, acc.username, acc.email)
+            return 0
+
+        # 処理実行
+        with SaasApiClient(api_config, logger=logger) as client:
+            processor = AccountProcessor(client, process_config, logger)
+            stats = processor.process(accounts)
+            processor.save_results()
+
+        # 結果表示
+        print("\n" + "=" * 50)
+        print("処理結果")
+        print("=" * 50)
+        print(stats)
+        print(f"出力ファイル: {args.output}")
+        print("=" * 50)
+
+        return 0 if stats.failed == 0 else 1
+
+    except ValueError as e:
+        logger.error("設定エラー: %s", e)
         return 1
-    else
-        log "CPU usage OK: ${cpu_usage}%"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "cpu_usage" "ok" "CPU usage normal" "$cpu_usage"
-    fi
-    
-    # メモリ使用率
-    local memory_info=$(free | grep '^Mem:')
-    local total_mem=$(echo $memory_info | awk '{print $2}')
-    local used_mem=$(echo $memory_info | awk '{print $3}')
-    local memory_usage=$(echo "scale=2; $used_mem * 100 / $total_mem" | bc)
-    
-    if (( $(echo "$memory_usage > $MEMORY_THRESHOLD" | bc -l) )); then
-        log "WARNING: High memory usage: ${memory_usage}%"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "memory_usage" "warning" "High memory usage" "$memory_usage"
+    except KeyboardInterrupt:
+        logger.info("中断されました")
+        return 130
+    except Exception as e:
+        logger.exception("予期しないエラー: %s", e)
         return 1
-    else
-        log "Memory usage OK: ${memory_usage}%"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "memory_usage" "ok" "Memory usage normal" "$memory_usage"
-    fi
-    
-    # ロードアベレージ
-    local load_avg=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | sed 's/,//')
-    local cpu_cores=$(nproc)
-    local load_per_core=$(echo "scale=2; $load_avg / $cpu_cores" | bc)
-    
-    if (( $(echo "$load_per_core > 1.0" | bc -l) )); then
-        log "WARNING: High load average: $load_avg (${load_per_core} per core)"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "load_average" "warning" "High load average" "$load_avg"
-        return 1
-    else
-        log "Load average OK: $load_avg"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "load_average" "ok" "Load average normal" "$load_avg"
-    fi
-    
-    return 0
-}
 
-# ディスク容量チェック
-check_disk_space() {
-    log "Checking disk space"
-    
-    local overall_status=0
-    
-    df -h | grep -E '^/dev/' | while read filesystem size used available percentage mountpoint; do
-        local usage_percent=$(echo $percentage | sed 's/%//')
-        
-        if [ "$usage_percent" -gt "$DISK_THRESHOLD" ]; then
-            log "WARNING: High disk usage on $mountpoint: $percentage"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "disk_${mountpoint//\//_}" "warning" "High disk usage" "$usage_percent"
-            overall_status=1
-        else
-            log "Disk usage OK on $mountpoint: $percentage"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "disk_${mountpoint//\//_}" "ok" "Disk usage normal" "$usage_percent"
-        fi
-    done
-    
-    # inode使用率チェック
-    df -i | grep -E '^/dev/' | while read filesystem inodes used available percentage mountpoint; do
-        local usage_percent=$(echo $percentage | sed 's/%//')
-        
-        if [ "$usage_percent" -gt 80 ]; then
-            log "WARNING: High inode usage on $mountpoint: $percentage"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "inode_${mountpoint//\//_}" "warning" "High inode usage" "$usage_percent"
-            overall_status=1
-        else
-            log "Inode usage OK on $mountpoint: $percentage"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "inode_${mountpoint//\//_}" "ok" "Inode usage normal" "$usage_percent"
-        fi
-    done
-    
-    return $overall_status
-}
 
-# サービス状態チェック
-check_services() {
-    log "Checking critical services"
-    
-    local services=("nginx" "mysql" "myapp" "redis")
-    local overall_status=0
-    
-    for service in "${services[@]}"; do
-        if systemctl is-active --quiet "$service"; then
-            log "Service $service is running"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "service_$service" "ok" "Service is running" "true"
-        else
-            log "ERROR: Service $service is not running"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "service_$service" "error" "Service is not running" "false"
-            overall_status=1
-        fi
-        
-        # サービスが有効になっているかチェック
-        if systemctl is-enabled --quiet "$service"; then
-            log "Service $service is enabled"
-        else
-            log "WARNING: Service $service is not enabled"
-        fi
-    done
-    
-    return $overall_status
-}
-
-# データベース接続チェック
-check_database() {
-    log "Checking database connectivity"
-    
-    local config_file="/etc/myapp/db_production.conf"
-    if [ ! -f "$config_file" ]; then
-        log "ERROR: Database configuration file not found"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "database_connection" "error" "Configuration file not found" "false"
-        return 1
-    fi
-    
-    source "$config_file"
-    
-    # 接続テスト
-    if mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" "$DB_NAME" >/dev/null 2>&1; then
-        log "Database connection OK"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "database_connection" "ok" "Database connection successful" "true"
-        
-        # 接続数チェック
-        local connections=$(mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -N -e "SHOW STATUS LIKE 'Threads_connected';" | awk '{print $2}')
-        local max_connections=$(mysql -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" -N -e "SHOW VARIABLES LIKE 'max_connections';" | awk '{print $2}')
-        local connection_usage=$(echo "scale=2; $connections * 100 / $max_connections" | bc)
-        
-        if (( $(echo "$connection_usage > 80" | bc -l) )); then
-            log "WARNING: High database connection usage: ${connection_usage}%"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "database_connections" "warning" "High connection usage" "$connection_usage"
-        else
-            log "Database connections OK: ${connections}/${max_connections}"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "database_connections" "ok" "Connection usage normal" "$connection_usage"
-        fi
-        
-        return 0
-    else
-        log "ERROR: Database connection failed"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "database_connection" "error" "Database connection failed" "false"
-        return 1
-    fi
-}
-
-# ネットワーク接続チェック
-check_network() {
-    log "Checking network connectivity"
-    
-    local hosts=("8.8.8.8" "1.1.1.1" "google.com")
-    local overall_status=0
-    
-    for host in "${hosts[@]}"; do
-        if ping -c 1 -W 5 "$host" >/dev/null 2>&1; then
-            log "Network connectivity to $host OK"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "network_$host" "ok" "Network connectivity OK" "true"
-        else
-            log "ERROR: Network connectivity to $host failed"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "network_$host" "error" "Network connectivity failed" "false"
-            overall_status=1
-        fi
-    done
-    
-    # ポート接続チェック
-    local ports=("80:nginx" "443:nginx" "3306:mysql" "8080:myapp")
-    
-    for port_service in "${ports[@]}"; do
-        local port=$(echo $port_service | cut -d: -f1)
-        local service=$(echo $port_service | cut -d: -f2)
-        
-        if netstat -tuln | grep ":$port " >/dev/null; then
-            log "Port $port ($service) is listening"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "port_$port" "ok" "Port is listening" "true"
-        else
-            log "WARNING: Port $port ($service) is not listening"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "port_$port" "warning" "Port is not listening" "false"
-            overall_status=1
-        fi
-    done
-    
-    return $overall_status
-}
-
-# セキュリティチェック
-check_security() {
-    log "Checking security status"
-    
-    local overall_status=0
-    
-    # ファイアウォール状態
-    if command -v ufw >/dev/null 2>&1; then
-        if ufw status | grep -q "Status: active"; then
-            log "Firewall is active"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "firewall" "ok" "Firewall is active" "true"
-        else
-            log "WARNING: Firewall is not active"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "firewall" "warning" "Firewall is not active" "false"
-            overall_status=1
-        fi
-    fi
-    
-    # SSH設定チェック
-    if [ -f "/etc/ssh/sshd_config" ]; then
-        if grep -q "PermitRootLogin no" /etc/ssh/sshd_config; then
-            log "SSH root login is disabled"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "ssh_root_login" "ok" "SSH root login disabled" "true"
-        else
-            log "WARNING: SSH root login may be enabled"
-            [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "ssh_root_login" "warning" "SSH root login may be enabled" "false"
-            overall_status=1
-        fi
-    fi
-    
-    # 失敗したログイン試行チェック
-    local failed_logins=$(grep "Failed password" /var/log/auth.log 2>/dev/null | wc -l || echo "0")
-    if [ "$failed_logins" -gt 100 ]; then
-        log "WARNING: High number of failed login attempts: $failed_logins"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "failed_logins" "warning" "High number of failed login attempts" "$failed_logins"
-        overall_status=1
-    else
-        log "Failed login attempts normal: $failed_logins"
-        [ "$OUTPUT_FORMAT" = "json" ] && add_json_result "failed_logins" "ok" "Failed login attempts normal" "$failed_logins"
-    fi
-    
-    return $overall_status
-}
-
-# アラート送信
-send_alert() {
-    local message="$1"
-    local severity="$2"
-    
-    log "Sending alert: $message"
-    
-    # メール送信（mailコマンドが利用可能な場合）
-    if command -v mail >/dev/null 2>&1; then
-        echo "$message" | mail -s "[$severity] Health Check Alert - $(hostname)" admin@example.com
-    fi
-    
-    # Slackウェブフック（設定されている場合）
-    if [ -f "/etc/myapp/slack_webhook.conf" ]; then
-        source "/etc/myapp/slack_webhook.conf"
-        curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\"[$severity] $(hostname): $message\"}" \
-            "$SLACK_WEBHOOK_URL" 2>/dev/null || true
-    fi
-}
-
-# レポート生成
-generate_report() {
-    log "Generating health report"
-    
-    local report_file="/tmp/health_report_$(date +%Y%m%d_%H%M%S).txt"
-    
-    cat > "$report_file" <<EOF
-Health Check Report
-==================
-Generated: $(date)
-Hostname: $(hostname)
-Uptime: $(uptime)
-
-System Information:
-- OS: $(lsb_release -d 2>/dev/null | cut -f2 || echo "Unknown")
-- Kernel: $(uname -r)
-- Architecture: $(uname -m)
-
-EOF
-    
-    # 各チェック実行してレポートに追加
-    {
-        echo "=== System Resources ==="
-        check_system_resources
-        echo
-        
-        echo "=== Disk Space ==="
-        check_disk_space
-        echo
-        
-        echo "=== Services ==="
-        check_services
-        echo
-        
-        echo "=== Database ==="
-        check_database
-        echo
-        
-        echo "=== Network ==="
-        check_network
-        echo
-        
-        echo "=== Security ==="
-        check_security
-        echo
-    } >> "$report_file" 2>&1
-    
-    log "Report generated: $report_file"
-    
-    if [ "$OUTPUT_FORMAT" = "json" ]; then
-        cat "$REPORT_FILE"
-    else
-        cat "$report_file"
-    fi
-}
-
-# メイン処理
-total_checks=0
-passed_checks=0
-failed_checks=0
-overall_status="ok"
-
-if [ "$OUTPUT_FORMAT" = "json" ]; then
-    init_json_report
-fi
-
-case "$ACTION" in
-    "check")
-        case "$TARGET" in
-            "all")
-                check_system_resources; total_checks=$((total_checks+1)); [ $? -eq 0 ] && passed_checks=$((passed_checks+1)) || failed_checks=$((failed_checks+1))
-                check_disk_space; total_checks=$((total_checks+1)); [ $? -eq 0 ] && passed_checks=$((passed_checks+1)) || failed_checks=$((failed_checks+1))
-                check_services; total_checks=$((total_checks+1)); [ $? -eq 0 ] && passed_checks=$((passed_checks+1)) || failed_checks=$((failed_checks+1))
-                check_database; total_checks=$((total_checks+1)); [ $? -eq 0 ] && passed_checks=$((passed_checks+1)) || failed_checks=$((failed_checks+1))
-                check_network; total_checks=$((total_checks+1)); [ $? -eq 0 ] && passed_checks=$((passed_checks+1)) || failed_checks=$((failed_checks+1))
-                check_security; total_checks=$((total_checks+1)); [ $? -eq 0 ] && passed_checks=$((passed_checks+1)) || failed_checks=$((failed_checks+1))
-                ;;
-            "system")
-                check_system_resources
-                ;;
-            "services")
-                check_services
-                ;;
-            "database")
-                check_database
-                ;;
-            "network")
-                check_network
-                ;;
-            "disk")
-                check_disk_space
-                ;;
-            "security")
-                check_security
-                ;;
-            *)
-                echo "Invalid target: $TARGET"
-                exit 1
-                ;;
-        esac
-        ;;
-    "monitor")
-        # 継続監視（cron等での使用を想定）
-        while true; do
-            check_system_resources
-            sleep 60
-        done
-        ;;
-    "alert")
-        # 閾値を超えた場合のアラート
-        if ! check_system_resources; then
-            send_alert "System resource usage is high" "WARNING"
-        fi
-        ;;
-    "report")
-        generate_report
-        ;;
-    *)
-        echo "Invalid action: $ACTION"
-        exit 1
-        ;;
-esac
-
-if [ "$failed_checks" -gt 0 ]; then
-    overall_status="warning"
-fi
-
-if [ "$OUTPUT_FORMAT" = "json" ]; then
-    finalize_json_report
-    cat "$REPORT_FILE"
-fi
-
-log "Health check completed. Passed: $passed_checks, Failed: $failed_checks"
-
-exit $failed_checks
+if __name__ == "__main__":
+    sys.exit(main())

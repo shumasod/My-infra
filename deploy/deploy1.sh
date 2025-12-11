@@ -468,7 +468,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    """メインエントリーポイント"""
+    """メインエントリーポイント""
     args = parse_args()
     logger = setup_logging(args.verbose)
 

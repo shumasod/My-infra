@@ -1,0 +1,380 @@
+#!/bin/bash
+
+# =============================================================================
+# 🎄 Christmas Tree with Music Script
+# =============================================================================
+# クリスマスツリー + beep音でジングルベル等を演奏
+# Usage: ./christmas_music.sh [options]
+# =============================================================================
+
+set -euo pipefail
+
+# カラー定義
+readonly GREEN='\033[0;32m'
+readonly BRIGHT_GREEN='\033[1;32m'
+readonly RED='\033[0;31m'
+readonly BRIGHT_RED='\033[1;31m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly BRIGHT_BLUE='\033[1;34m'
+readonly MAGENTA='\033[0;35m'
+readonly CYAN='\033[0;36m'
+readonly WHITE='\033[1;37m'
+readonly BROWN='\033[0;33m'
+readonly RESET='\033[0m'
+
+TREE_HEIGHT=12
+
+# =============================================================================
+# 音楽関連の関数
+# =============================================================================
+
+# beepコマンドが使えるかチェック
+check_beep() {
+    if command -v beep &>/dev/null; then
+        echo "beep"
+    elif [[ -e /dev/console ]]; then
+        echo "console"
+    else
+        echo "none"
+    fi
+}
+
+# 音符の周波数（Hz）
+declare -A NOTES=(
+    ["C4"]=262  ["D4"]=294  ["E4"]=330  ["F4"]=349
+    ["G4"]=392  ["A4"]=440  ["B4"]=494
+    ["C5"]=523  ["D5"]=587  ["E5"]=659  ["F5"]=698
+    ["G5"]=784  ["A5"]=880  ["B5"]=988
+    ["REST"]=0
+)
+
+# beepで音を鳴らす
+play_beep() {
+    local freq=$1
+    local duration=$2
+    
+    if [[ $freq -eq 0 ]]; then
+        sleep "$(echo "scale=3; $duration/1000" | bc)"
+        return
+    fi
+    
+    local method
+    method=$(check_beep)
+    
+    case "$method" in
+        beep)
+            beep -f "$freq" -l "$duration" 2>/dev/null || true
+            ;;
+        console)
+            # /dev/consoleを使ったbeep（root権限必要）
+            echo -ne "\a" >/dev/console 2>/dev/null || true
+            sleep "$(echo "scale=3; $duration/1000" | bc)"
+            ;;
+        *)
+            # 音が出せない場合は視覚的なフィードバック
+            echo -ne "\a"
+            sleep "$(echo "scale=3; $duration/1000" | bc)"
+            ;;
+    esac
+}
+
+# ジングルベル
+play_jingle_bells() {
+    echo -e "${YELLOW}♪ Playing Jingle Bells...${RESET}"
+    
+    # ジングルベルのメロディ（簡易版）
+    local melody=(
+        "E4:300" "E4:300" "E4:600"
+        "E4:300" "E4:300" "E4:600"
+        "E4:300" "G4:300" "C4:400" "D4:200" "E4:800"
+        "F4:300" "F4:300" "F4:400" "F4:200"
+        "F4:300" "E4:300" "E4:300" "E4:150" "E4:150"
+        "E4:300" "D4:300" "D4:300" "E4:300" "D4:600" "G4:600"
+    )
+    
+    for note in "${melody[@]}"; do
+        local pitch="${note%%:*}"
+        local duration="${note##*:}"
+        local freq="${NOTES[$pitch]:-0}"
+        play_beep "$freq" "$duration"
+    done
+}
+
+# きよしこの夜
+play_silent_night() {
+    echo -e "${YELLOW}♪ Playing Silent Night...${RESET}"
+    
+    local melody=(
+        "G4:450" "A4:150" "G4:300" "E4:600"
+        "G4:450" "A4:150" "G4:300" "E4:600"
+        "D5:600" "D5:300" "B4:600"
+        "C5:600" "C5:300" "G4:600"
+        "A4:600" "A4:300" "C5:450" "B4:150" "A4:300"
+        "G4:450" "A4:150" "G4:300" "E4:600"
+    )
+    
+    for note in "${melody[@]}"; do
+        local pitch="${note%%:*}"
+        local duration="${note##*:}"
+        local freq="${NOTES[$pitch]:-0}"
+        play_beep "$freq" "$duration"
+    done
+}
+
+# We Wish You a Merry Christmas
+play_we_wish() {
+    echo -e "${YELLOW}♪ Playing We Wish You a Merry Christmas...${RESET}"
+    
+    local melody=(
+        "G4:300" "C5:300" "C5:200" "D5:200" "C5:200" "B4:200"
+        "A4:300" "A4:300" "A4:300"
+        "D5:300" "D5:200" "E5:200" "D5:200" "C5:200"
+        "B4:300" "G4:300" "G4:300"
+        "E5:300" "E5:200" "F5:200" "E5:200" "D5:200"
+        "C5:300" "A4:300" "G4:200" "G4:200"
+        "A4:300" "D5:300" "B4:300" "C5:600"
+    )
+    
+    for note in "${melody[@]}"; do
+        local pitch="${note%%:*}"
+        local duration="${note##*:}"
+        local freq="${NOTES[$pitch]:-0}"
+        play_beep "$freq" "$duration"
+    done
+}
+
+# ターミナルベル（最もシンプル）
+play_terminal_bells() {
+    echo -e "${YELLOW}♪ Playing Terminal Bells...${RESET}"
+    for _ in {1..8}; do
+        echo -ne "\a"
+        sleep 0.3
+    done
+}
+
+# =============================================================================
+# ツリー描画関数（前回と同じ）
+# =============================================================================
+
+get_terminal_width() {
+    tput cols 2>/dev/null || echo 80
+}
+
+hide_cursor() {
+    tput civis 2>/dev/null || true
+}
+
+show_cursor() {
+    tput cnorm 2>/dev/null || true
+}
+
+cleanup() {
+    show_cursor
+    echo -e "${RESET}"
+    echo ""
+    echo -e "${YELLOW}🎄 Merry Christmas! 🎄${RESET}"
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+get_ornament_color() {
+    local colors=("$RED" "$BRIGHT_RED" "$YELLOW" "$BLUE" "$BRIGHT_BLUE" "$MAGENTA" "$CYAN" "$WHITE")
+    echo "${colors[$((RANDOM % ${#colors[@]}))]}"
+}
+
+get_ornament() {
+    local ornaments=("●" "○" "◆" "★" "✦" "❄" "♦" "◇" "♪" "♫")
+    echo "${ornaments[$((RANDOM % ${#ornaments[@]}))]}"
+}
+
+draw_star() {
+    local width=$1
+    local center=$((width / 2))
+    
+    local padding=$((center - 5))
+    printf "%*s" "$padding" ""
+    echo -e "${YELLOW}    ★    ${RESET}"
+    printf "%*s" "$padding" ""
+    echo -e "${YELLOW}   ███   ${RESET}"
+    printf "%*s" "$padding" ""
+    echo -e "${YELLOW}    █    ${RESET}"
+}
+
+draw_tree() {
+    local height=$1
+    local width=$2
+    local center=$((width / 2))
+    
+    for ((i = 0; i < height; i++)); do
+        local row_width=$((i * 2 + 1))
+        local padding=$((center - row_width / 2 - 1))
+        
+        printf "%*s" "$padding" ""
+        
+        for ((j = 0; j < row_width; j++)); do
+            if [[ $((RANDOM % 7)) -eq 0 ]] && [[ $j -ne 0 ]] && [[ $j -ne $((row_width - 1)) ]]; then
+                local color
+                color=$(get_ornament_color)
+                local ornament
+                ornament=$(get_ornament)
+                echo -ne "${color}${ornament}${RESET}"
+            else
+                if [[ $(( (i + j) % 3 )) -eq 0 ]]; then
+                    echo -ne "${BRIGHT_GREEN}*${RESET}"
+                else
+                    echo -ne "${GREEN}*${RESET}"
+                fi
+            fi
+        done
+        echo ""
+    done
+}
+
+draw_trunk() {
+    local width=$1
+    local center=$((width / 2))
+    
+    for _ in {1..3}; do
+        printf "%*s" "$((center - 3))" ""
+        echo -e "${BROWN}█████${RESET}"
+    done
+}
+
+draw_presents() {
+    local width=$1
+    local center=$((width / 2))
+    local offset=$((center - 12))
+    
+    printf "%*s" "$offset" ""
+    echo -e "  ${RED}┌───┐${RESET}   ${BLUE}┌──┐${RESET}   ${MAGENTA}┌────┐${RESET}"
+    printf "%*s" "$offset" ""
+    echo -e "  ${RED}│${YELLOW}♥${RED}│${RESET}   ${BLUE}│${WHITE}★${BLUE}│${RESET}   ${MAGENTA}│${CYAN}♪♪${MAGENTA}│${RESET}"
+    printf "%*s" "$offset" ""
+    echo -e "  ${RED}└───┘${RESET}   ${BLUE}└──┘${RESET}   ${MAGENTA}└────┘${RESET}"
+}
+
+draw_message() {
+    local width=$1
+    local center=$((width / 2))
+    local message="🎄 Merry Christmas! 🎄"
+    local padding=$((center - 12))
+    
+    echo ""
+    printf "%*s" "$padding" ""
+    echo -e "${BRIGHT_RED}${message}${RESET}"
+    echo ""
+}
+
+draw_full_tree() {
+    local term_width
+    term_width=$(get_terminal_width)
+    
+    clear
+    echo ""
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}║${RESET}  ${YELLOW}🎄 Christmas Tree with Music${RESET}                         ${CYAN}║${RESET}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${RESET}"
+    echo ""
+    draw_star "$term_width"
+    draw_tree "$TREE_HEIGHT" "$term_width"
+    draw_trunk "$term_width"
+    echo ""
+    draw_presents "$term_width"
+    draw_message "$term_width"
+}
+
+# =============================================================================
+# メニュー
+# =============================================================================
+
+show_menu() {
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}║${RESET}  ${YELLOW}🎵 Christmas Music Menu${RESET}                               ${CYAN}║${RESET}"
+    echo -e "${CYAN}╠════════════════════════════════════════════════════════╣${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}1)${RESET} Jingle Bells                                       ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}2)${RESET} Silent Night                                       ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}3)${RESET} We Wish You a Merry Christmas                      ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}4)${RESET} Terminal Bells (シンプル)                          ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}5)${RESET} All Songs                                          ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}t)${RESET} Show Tree Only                                     ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${WHITE}q)${RESET} Quit                                               ${CYAN}║${RESET}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${RESET}"
+    echo ""
+    echo -ne "${GREEN}Select option: ${RESET}"
+}
+
+# =============================================================================
+# メイン
+# =============================================================================
+
+main() {
+    hide_cursor
+    
+    while true; do
+        clear
+        draw_full_tree
+        echo ""
+        show_menu
+        
+        read -r -n 1 choice
+        echo ""
+        
+        case "$choice" in
+            1)
+                play_jingle_bells
+                echo -e "${GREEN}Press any key to continue...${RESET}"
+                read -r -n 1
+                ;;
+            2)
+                play_silent_night
+                echo -e "${GREEN}Press any key to continue...${RESET}"
+                read -r -n 1
+                ;;
+            3)
+                play_we_wish
+                echo -e "${GREEN}Press any key to continue...${RESET}"
+                read -r -n 1
+                ;;
+            4)
+                play_terminal_bells
+                echo -e "${GREEN}Press any key to continue...${RESET}"
+                read -r -n 1
+                ;;
+            5)
+                play_jingle_bells
+                sleep 1
+                play_silent_night
+                sleep 1
+                play_we_wish
+                echo -e "${GREEN}Press any key to continue...${RESET}"
+                read -r -n 1
+                ;;
+            t|T)
+                echo -e "${GREEN}Press any key to continue...${RESET}"
+                read -r -n 1
+                ;;
+            q|Q)
+                cleanup
+                ;;
+            *)
+                ;;
+        esac
+    done
+}
+
+# ヘルプ
+if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help    このヘルプを表示"
+    echo ""
+    echo "Note: beepコマンドがインストールされている場合は"
+    echo "      実際に音が鳴ります。"
+    echo "      sudo apt install beep"
+    exit 0
+fi
+
+main

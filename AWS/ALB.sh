@@ -81,7 +81,7 @@ check_prerequisites() {
 # ALB操作関数
 ###########################################
 
-# ロードバランサーARNの取得
+
 get_load_balancer_arn() {
     log_message "INFO" "ロードバランサーARNの取得を開始します (Name: ${LOAD_BALANCER_NAME})"
     

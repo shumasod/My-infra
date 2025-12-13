@@ -7,7 +7,7 @@ set -o pipefail
 ###########################################
 # 設定値
 ###########################################
-# スクリプト実行ディレクトリの取得
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${SCRIPT_DIR}/logs"
 LOG_FILE="${LOG_DIR}/alb-manager-$(date '+%Y%m%d').log"

@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 文字色を設定
+
 GREEN='\033[0;32m'
 BROWN='\033[0;33m'
 RED='\033[0;31m'
 WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+NC='\033[0m' 
 
-# 門松のアスキーアート
+
 echo -e "${GREEN}"
 cat << "EOF"
 ⠀　　　_〆

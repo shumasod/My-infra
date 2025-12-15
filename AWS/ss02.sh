@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# AWS SSO ユーザー・グループ監査レポートスクリプト
 # 使用方法: ./sso_audit_report.sh [options]
 
 set -euo pipefail

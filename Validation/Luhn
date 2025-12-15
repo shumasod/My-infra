@@ -20,7 +20,7 @@
   return sum % 10 === 0;
 }
 
-// 郵便番号のバリデーション (日本の郵便番号 例: 123-4567)
+// 郵便番号のバリデーション 
 function validatePostalCode(postalCode) {
   const regex = /^\d{3}-\d{4}$/;
   return regex.test(postalCode);

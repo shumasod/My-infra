@@ -1,25 +1,90 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# -*- coding: utf-8 -*-
+# 鴨葱うどん 〜夜の部・R-18バージョン〜
 
-# 鴨葱うどんを表示する関数
-function show_kamonegi() {
-  echo "**********************************"
-  echo "** 鴨葱うどん **"
-  echo "**********************************"
+set -euo pipefail
 
-  echo "  具材："
-  echo "    - うどんは200g"
-  echo "    - 鴨肉は25g"
-  echo "    - 九条ネギ"
-  echo "    - だし汁"
+# 色で誘惑する
+RED='\e[38;5;196m'
+PINK='\e[38;5;207m'
+HOT='\e[38;5;202m'
+STEAM='\e[38;5;226m'
+BOLD='\e[1m'
+RESET='\e[0m'
 
-  echo "  作り方："
-  echo "  1. 鍋にだし汁を入れて沸騰させる。"
-  echo "  2. うどんを袋から取り出し、鍋に入れる。"
-  echo "  3. うどんが柔らかくなったら、鴨肉と九条ネギを加える。"
-  echo "  4. 温まったら、器に盛り付けて完成。"
+# ゆっくり点滅で焦らす
+blink() { echo -ne "\e[5m$1\e[25m"; }
 
-  echo "**********************************"
+show_kamonegi_erotic() {
+    clear
+    sleep 0.8
+
+    echo -e "${PINK}"
+    cat << 'EOF'
+
+               ██████████
+            ████        ████
+          ███              ███
+        ███     あつあつ…     ███
+       ███      鴨の脂が…      ███
+      ███        とろけて…      ███
+     ████                    ████
+    ████    🦆 鴨肉 25g      ████
+   ████                      ████
+  ███      ╭─────────────╮    ███
+ ███       │   もちもち    │     ███
+███        │  讃岐うどん  │      ███
+███        │   200g      │      ███
+ ███       ╰─────────────╯     ███
+  ███                          ███
+   ████                    ████
+     ████    🟢🟢 九条ネギたっぷり    ████
+       ███                    ███
+         ███              ███
+           ███          ███
+             ████████████
+
+EOF
+    echo -e "${RESET}"
+
+    echo -e "${HOT}${BOLD}今夜は……特別な鴨葱うどんよ…${RESET}"
+    sleep 1.5
+
+    echo
+    echo -e "${PINK}【深夜のレシピ】${RESET}"
+    echo
+    echo -e "${STEAM}  1. だし汁を${blink ゆっくり}沸騰させて… 火加減は強火でね"
+    sleep 1.2
+    echo -e "${STEAM}  2. うどんを${blink そっと}取り出して… 袋から滑り込ませるの…"
+    sleep 1.5
+    echo -e "${STEAM}  3. 鴨肉をのせて… 脂がじゅわっと${blink 溶け出す}瞬間がたまらない…"
+    sleep 1.8
+    echo -e "${STEAM}  4. 九条ネギを${blink たっぷり}散らして… 香りが部屋中に広がっちゃう…"
+    sleep 1.5
+
+    echo
+    echo -e "${RED}${BOLD}      ふぅ〜… 熱い… でも我慢できない…${RESET}"
+    echo
+    echo -e "${PINK}${BOLD}                いただきます…♡${RESET}"
+    sleep 1
+
+    # 最後にズルズル音
+    echo -e "${HOT}"
+    for i in {1..6}; do
+        echo -n "ズルッ"
+        sleep 0.15
+        echo -n "……"
+        sleep 0.3
+    done
+    echo -e " あぁ〜〜〜♡${RESET}"
+
+    echo
+    echo -e "${PINK}……ごちそうさまでした。${RESET}"
+    echo -e "${PINK}また…夜に食べに来てね…？${RESET}"
 }
 
-# 鴨葱うどんを表示する関数を実行
-show_kamonegi
+# 2
+}
+
+# 実行
+show_kamonegi_erotic

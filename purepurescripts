@@ -1,0 +1,241 @@
+module Mathematics where
+
+import Prelude hiding (map)
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Either (Either(..), either)
+import Data.List (List(..), (:), foldl, foldr, reverse, filter)
+import Data.Tuple (Tuple(..), fst, snd)
+
+-- 1. ファンクター（関手）の純粋実装
+class Functor f where
+  map :: forall a b. (a -> b) -> f a -> f b
+
+-- 自作Identityファンクター
+newtype Identity a = Identity a
+
+instance functorIdentity :: Functor Identity where
+  map f (Identity x) = Identity (f x)
+
+-- Constファンクター  
+newtype Const a b = Const a
+
+instance functorConst :: Functor (Const a) where
+  map _ (Const x) = Const x
+
+-- 2. アプリカティブファンクターの法則
+class Functor f <= Applicative f where
+  pure :: forall a. a -> f a
+  apply :: forall a b. f (a -> b) -> f a -> f b
+
+infixl 4 apply as <*>
+
+-- liftA2の実装
+liftA2 :: forall f a b c. Applicative f => (a -> b -> c) -> f a -> f b -> f c
+liftA2 f x y = pure f <*> x <*> y
+
+-- 3. モナドの純粋実装
+class Applicative m <= Monad m where
+  bind :: forall a b. m a -> (a -> m b) -> m b
+
+infixl 1 bind as >>=
+
+-- kleisli合成
+kleisliCompose :: forall m a b c. Monad m => (a -> m b) -> (b -> m c) -> (a -> m c)
+kleisliCompose f g = \x -> f x >>= g
+
+infixr 1 kleisliCompose as >=>
+
+-- 4. 自由モナド（純粋な計算の記述）
+data Free f a = Pure a | Free (f (Free f a))
+
+instance functorFree :: Functor f => Functor (Free f) where
+  map f (Pure x) = Pure (f x)  
+  map f (Free x) = Free (map (map f) x)
+
+instance applicativeFree :: Functor f => Applicative (Free f) where
+  pure = Pure
+  apply (Pure f) x = map f x
+  apply (Free f) x = Free (map (\g -> g <*> x) f)
+
+instance monadFree :: Functor f => Monad (Free f) where
+  bind (Pure x) f = f x
+  bind (Free x) f = Free (map (\y -> y >>= f) x)
+
+-- 5. 圏論的構造：射と対象
+-- 自然変換の表現
+type NaturalTransformation f g = forall a. f a -> g a
+
+-- コ・ヨネダ補題の実装
+newtype Coyoneda f a = Coyoneda (forall b. (a -> b) -> f b)
+
+liftCoyoneda :: forall f a. f a -> Coyoneda f a  
+liftCoyoneda fa = Coyoneda (\k -> map k fa)
+
+lowerCoyoneda :: forall f a. Functor f => Coyoneda f a -> f a
+lowerCoyoneda (Coyoneda k) = k identity
+
+-- 6. 代数的構造の抽象化
+-- 群の抽象化
+class Semigroup a where
+  append :: a -> a -> a
+
+class Semigroup a <= Monoid a where
+  mempty :: a
+
+class Monoid a <= Group a where  
+  inverse :: a -> a
+
+-- 環の抽象化
+class Group a <= Ring a where
+  zero :: a
+  one :: a  
+  multiply :: a -> a -> a
+
+-- 7. 純粋なストリーム（無限リスト）
+data Stream a = Stream a (Unit -> Stream a)
+
+-- ストリームの先頭
+head :: forall a. Stream a -> a
+head (Stream x _) = x
+
+-- ストリームの残り
+tail :: forall a. Stream a -> Stream a  
+tail (Stream _ f) = f unit
+
+-- ストリームのmap
+mapStream :: forall a b. (a -> b) -> Stream a -> Stream b
+mapStream f (Stream x rest) = Stream (f x) (\_ -> mapStream f (rest unit))
+
+-- 無限フィボナッチストリーム
+fibStream :: Stream Int
+fibStream = fibStreamFrom 0 1
+  where
+    fibStreamFrom a b = Stream a (\_ -> fibStreamFrom b (a + b))
+
+-- 8. コモナド（dual of monad）
+class Functor w <= Comonad w where
+  extract :: forall a. w a -> a
+  duplicate :: forall a. w a -> w (w a)
+
+-- Non-Emptyリストのコモナド実装
+data NonEmpty a = NonEmpty a (List a)
+
+instance functorNonEmpty :: Functor NonEmpty where
+  map f (NonEmpty x xs) = NonEmpty (f x) (map f xs)
+
+instance comonadNonEmpty :: Comonad NonEmpty where
+  extract (NonEmpty x _) = x
+  duplicate w@(NonEmpty _ Nil) = NonEmpty w Nil
+  duplicate w@(NonEmpty _ (y : ys)) = 
+    NonEmpty w (map (\(NonEmpty z zs) -> NonEmpty z zs) (duplicate (NonEmpty y ys)))
+
+-- 9. Fix point（不動点）と再帰スキーム
+newtype Fix f = Fix (f (Fix f))
+
+-- カタモーフィズム（fold）
+cata :: forall f a. Functor f => (f a -> a) -> Fix f -> a
+cata alg (Fix f) = alg (map (cata alg) f)
+
+-- アナモーフィズム（unfold）  
+ana :: forall f a. Functor f => (a -> f a) -> a -> Fix f
+ana coalg x = Fix (map (ana coalg) (coalg x))
+
+-- 10. 線形代数の抽象化
+-- ベクトル空間の概念
+class VectorSpace v where
+  zeroVector :: v
+  addVectors :: v -> v -> v  
+  scaleVector :: Number -> v -> v
+
+-- 2次元ベクトル
+data Vec2 = Vec2 Number Number
+
+instance vectorSpaceVec2 :: VectorSpace Vec2 where
+  zeroVector = Vec2 0.0 0.0
+  addVectors (Vec2 x1 y1) (Vec2 x2 y2) = Vec2 (x1 + x2) (y1 + y2)
+  scaleVector k (Vec2 x y) = Vec2 (k * x) (k * y)
+
+-- 内積
+dotProduct :: Vec2 -> Vec2 -> Number
+dotProduct (Vec2 x1 y1) (Vec2 x2 y2) = x1 * x2 + y1 * y2
+
+-- 11. プロファンクター（profunctor）
+class Profunctor p where
+  dimap :: forall a b c d. (a -> b) -> (c -> d) -> p b c -> p a d
+
+-- 関数のプロファンクター実装  
+instance profunctorFunction :: Profunctor (->) where
+  dimap f g h = g ∘ h ∘ f
+
+-- 12. 純粋な並列計算の抽象化
+data Par a = Par (Unit -> a)  -- 簡略化された並列計算
+
+runPar :: forall a. Par a -> a
+runPar (Par computation) = computation unit
+
+parMap :: forall a b. (a -> b) -> Par a -> Par b
+parMap f (Par computation) = Par (\_ -> f (computation unit))
+
+-- 並列アプリカティブ
+parApply :: forall a b. Par (a -> b) -> Par a -> Par b  
+parApply (Par f) (Par x) = Par (\_ -> f unit (x unit))
+
+-- 13. 型レベル計算（phantom types）
+data Nat = Zero | Succ Nat
+
+-- 型安全な配列インデックス
+data Vec :: Nat -> Type -> Type
+data Vec n a = Vec (Array a)
+
+-- 型レベルでの長さ制約
+safeHead :: forall a. Vec (Succ Zero) a -> a
+safeHead (Vec [x]) = x
+safeHead (Vec (x : _)) = x  
+safeHead (Vec []) = unsafeCrashWith "impossible"
+
+-- 14. Church encoding（チャーチ符号化）
+-- 自然数のChurch符号化
+type ChurchNat = forall a. (a -> a) -> a -> a
+
+churchZero :: ChurchNat
+churchZero = \f x -> x
+
+churchSucc :: ChurchNat -> ChurchNat
+churchSucc n = \f x -> f (n f x)
+
+churchAdd :: ChurchNat -> ChurchNat -> ChurchNat  
+churchAdd m n = \f x -> m f (n f x)
+
+churchMul :: ChurchNat -> ChurchNat -> ChurchNat
+churchMul m n = \f -> m (n f)
+
+-- Church符号化から通常の数値へ変換
+fromChurch :: ChurchNat -> Int
+fromChurch n = n (_ + 1) 0
+
+-- 15. 純粋な状態機械
+data StateMachine state input output = StateMachine
+  { initialState :: state
+  , transition :: state -> input -> Tuple state output
+  }
+
+-- 状態機械の実行
+runStateMachine :: forall s i o. StateMachine s i o -> List i -> Tuple s (List o)
+runStateMachine (StateMachine sm) inputs = 
+  foldl step (Tuple sm.initialState Nil) inputs
+  where
+    step (Tuple state outputs) input =
+      case sm.transition state input of
+        Tuple newState output -> Tuple newState (outputs <> pure output)
+
+-- 16. 圏の射の合成法則
+-- 恒等射
+idMorphism :: forall a. a -> a  
+idMorphism = identity
+
+-- 射の合成（結合律を満たす）
+composeMorphisms :: forall a b c. (b -> c) -> (a -> b) -> (a -> c)
+composeMorphisms = compose
+
+-- 合成の結合律: (f ∘ g) ∘ h = f ∘ (g ∘ h)
+-- 恒等律: f ∘ id = f, id ∘ f = f

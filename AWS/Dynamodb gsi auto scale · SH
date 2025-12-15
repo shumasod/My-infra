@@ -1,0 +1,254 @@
+#!/bin/bash
+
+#############################################
+# DynamoDB GSI Auto Scaling Script
+# GSIのキャパシティ自動調整と負荷分散
+#############################################
+
+set -e
+
+# 設定値
+TABLE_NAME="${1:-your-table-name}"
+REGION="${AWS_REGION:-ap-northeast-1}"
+THROTTLE_THRESHOLD=10       # スロットリング発生閾値（5分間）
+USAGE_THRESHOLD_HIGH=75     # 使用率上限閾値(%)
+USAGE_THRESHOLD_LOW=25      # 使用率下限閾値(%)
+SCALE_FACTOR=1.5            # スケール倍率
+MIN_CAPACITY=5              # 最小キャパシティ
+MAX_CAPACITY=200            # 最大キャパシティ
+LOG_FILE="/var/log/dynamodb_gsi_autoscale.log"
+
+# ログ関数
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# テーブルのGSIリスト取得
+get_gsi_list() {
+    aws dynamodb describe-table \
+        --table-name "$TABLE_NAME" \
+        --region "$REGION" \
+        --query 'Table.GlobalSecondaryIndexes[*].IndexName' \
+        --output text
+}
+
+# GSIの現在のキャパシティ取得
+get_gsi_capacity() {
+    local index_name=$1
+    local capacity_type=$2  # ReadCapacityUnits or WriteCapacityUnits
+    
+    aws dynamodb describe-table \
+        --table-name "$TABLE_NAME" \
+        --region "$REGION" \
+        --query "Table.GlobalSecondaryIndexes[?IndexName=='$index_name'].ProvisionedThroughput.$capacity_type" \
+        --output text
+}
+
+# GSIのメトリクス取得
+get_gsi_metric() {
+    local metric_name=$1
+    local index_name=$2
+    local start_time=$(date -u -d '5 minutes ago' '+%Y-%m-%dT%H:%M:%S')
+    local end_time=$(date -u '+%Y-%m-%dT%H:%M:%S')
+    
+    aws cloudwatch get-metric-statistics \
+        --namespace AWS/DynamoDB \
+        --metric-name "$metric_name" \
+        --dimensions Name=TableName,Value="$TABLE_NAME" Name=GlobalSecondaryIndexName,Value="$index_name" \
+        --start-time "$start_time" \
+        --end-time "$end_time" \
+        --period 300 \
+        --statistics Sum,Average \
+        --region "$REGION" \
+        --query 'Datapoints[0]' \
+        --output json
+}
+
+# GSIのスロットリング確認
+check_throttling() {
+    local index_name=$1
+    local read_throttle=$(get_gsi_metric "ReadThrottleEvents" "$index_name" | jq -r '.Sum // 0')
+    local write_throttle=$(get_gsi_metric "WriteThrottleEvents" "$index_name" | jq -r '.Sum // 0')
+    
+    echo "$read_throttle $write_throttle"
+}
+
+# GSIの使用率取得
+get_gsi_usage() {
+    local index_name=$1
+    
+    local consumed_read=$(get_gsi_metric "ConsumedReadCapacityUnits" "$index_name" | jq -r '.Average // 0')
+    local consumed_write=$(get_gsi_metric "ConsumedWriteCapacityUnits" "$index_name" | jq -r '.Average // 0')
+    
+    local provisioned_read=$(get_gsi_capacity "$index_name" "ReadCapacityUnits")
+    local provisioned_write=$(get_gsi_capacity "$index_name" "WriteCapacityUnits")
+    
+    local read_usage=0
+    local write_usage=0
+    
+    if [ "$provisioned_read" != "0" ]; then
+        read_usage=$(echo "scale=2; ($consumed_read / $provisioned_read) * 100" | bc)
+    fi
+    
+    if [ "$provisioned_write" != "0" ]; then
+        write_usage=$(echo "scale=2; ($consumed_write / $provisioned_write) * 100" | bc)
+    fi
+    
+    echo "$read_usage $write_usage"
+}
+
+# GSIキャパシティ更新
+update_gsi_capacity() {
+    local index_name=$1
+    local read_capacity=$2
+    local write_capacity=$3
+    
+    log "  GSI[$index_name] キャパシティ更新: Read=$read_capacity, Write=$write_capacity"
+    
+    aws dynamodb update-table \
+        --table-name "$TABLE_NAME" \
+        --global-secondary-index-updates \
+        "[{\"Update\":{\"IndexName\":\"$index_name\",\"ProvisionedThroughput\":{\"ReadCapacityUnits\":$read_capacity,\"WriteCapacityUnits\":$write_capacity}}}]" \
+        --region "$REGION"
+}
+
+# キャパシティ計算
+calculate_capacity() {
+    local current=$1
+    local usage=$2
+    local throttle=$3
+    local new_capacity=$current
+    
+    # スロットリング発生時は即座にスケールアップ
+    if [ "$throttle" -gt "$THROTTLE_THRESHOLD" ]; then
+        new_capacity=$(echo "$current * 2" | bc | awk '{print int($1+0.5)}')
+        log "    スロットリング検出($throttle回) - 緊急スケールアップ"
+    elif (( $(echo "$usage > $USAGE_THRESHOLD_HIGH" | bc -l) )); then
+        new_capacity=$(echo "$current * $SCALE_FACTOR" | bc | awk '{print int($1+0.5)}')
+        log "    高使用率($usage%) - スケールアップ"
+    elif (( $(echo "$usage < $USAGE_THRESHOLD_LOW" | bc -l) )); then
+        new_capacity=$(echo "$current / $SCALE_FACTOR" | bc | awk '{print int($1+0.5)}')
+        log "    低使用率($usage%) - スケールダウン"
+    fi
+    
+    # 最小/最大値の制限
+    if [ "$new_capacity" -lt "$MIN_CAPACITY" ]; then
+        new_capacity=$MIN_CAPACITY
+    elif [ "$new_capacity" -gt "$MAX_CAPACITY" ]; then
+        new_capacity=$MAX_CAPACITY
+    fi
+    
+    echo "$new_capacity"
+}
+
+# GSIステータス確認
+check_gsi_status() {
+    local index_name=$1
+    
+    aws dynamodb describe-table \
+        --table-name "$TABLE_NAME" \
+        --region "$REGION" \
+        --query "Table.GlobalSecondaryIndexes[?IndexName=='$index_name'].IndexStatus" \
+        --output text
+}
+
+# GSI分析とレポート生成
+generate_gsi_report() {
+    local report_file="/tmp/gsi_report_$(date +%Y%m%d_%H%M%S).txt"
+    
+    echo "========== DynamoDB GSI レポート ==========" > "$report_file"
+    echo "テーブル名: $TABLE_NAME" >> "$report_file"
+    echo "生成日時: $(date '+%Y-%m-%d %H:%M:%S')" >> "$report_file"
+    echo "" >> "$report_file"
+    
+    for index_name in $(get_gsi_list); do
+        local status=$(check_gsi_status "$index_name")
+        local read_cap=$(get_gsi_capacity "$index_name" "ReadCapacityUnits")
+        local write_cap=$(get_gsi_capacity "$index_name" "WriteCapacityUnits")
+        local usage=$(get_gsi_usage "$index_name")
+        local read_usage=$(echo "$usage" | awk '{print $1}')
+        local write_usage=$(echo "$usage" | awk '{print $2}')
+        local throttle=$(check_throttling "$index_name")
+        local read_throttle=$(echo "$throttle" | awk '{print $1}')
+        local write_throttle=$(echo "$throttle" | awk '{print $2}')
+        
+        echo "GSI: $index_name" >> "$report_file"
+        echo "  ステータス: $status" >> "$report_file"
+        echo "  キャパシティ: Read=$read_cap, Write=$write_cap" >> "$report_file"
+        echo "  使用率: Read=${read_usage}%, Write=${write_usage}%" >> "$report_file"
+        echo "  スロットリング: Read=$read_throttle回, Write=$write_throttle回" >> "$report_file"
+        echo "" >> "$report_file"
+    done
+    
+    log "レポート生成: $report_file"
+}
+
+# メイン処理
+main() {
+    log "========== DynamoDB GSI Auto Scaling 開始 =========="
+    log "テーブル名: $TABLE_NAME"
+    
+    local gsi_list=$(get_gsi_list)
+    
+    if [ -z "$gsi_list" ]; then
+        log "GSIが見つかりませんでした"
+        exit 0
+    fi
+    
+    local changes_made=false
+    
+    for index_name in $gsi_list; do
+        log "GSI処理中: $index_name"
+        
+        # ステータス確認
+        local status=$(check_gsi_status "$index_name")
+        if [ "$status" != "ACTIVE" ]; then
+            log "  GSIステータスが$status のためスキップ"
+            continue
+        fi
+        
+        # 現在のキャパシティ取得
+        local current_read=$(get_gsi_capacity "$index_name" "ReadCapacityUnits")
+        local current_write=$(get_gsi_capacity "$index_name" "WriteCapacityUnits")
+        log "  現在のキャパシティ: Read=$current_read, Write=$current_write"
+        
+        # スロットリング確認
+        local throttle=$(check_throttling "$index_name")
+        local read_throttle=$(echo "$throttle" | awk '{print $1}')
+        local write_throttle=$(echo "$throttle" | awk '{print $2}')
+        log "  スロットリング: Read=$read_throttle回, Write=$write_throttle回"
+        
+        # 使用率取得
+        local usage=$(get_gsi_usage "$index_name")
+        local read_usage=$(echo "$usage" | awk '{print $1}')
+        local write_usage=$(echo "$usage" | awk '{print $2}')
+        log "  使用率: Read=${read_usage}%, Write=${write_usage}%"
+        
+        # 新しいキャパシティ計算
+        local new_read=$(calculate_capacity "$current_read" "$read_usage" "$read_throttle")
+        local new_write=$(calculate_capacity "$current_write" "$write_usage" "$write_throttle")
+        
+        # キャパシティ変更が必要か確認
+        if [ "$new_read" != "$current_read" ] || [ "$new_write" != "$current_write" ]; then
+            update_gsi_capacity "$index_name" "$new_read" "$new_write"
+            changes_made=true
+            log "  キャパシティを更新しました"
+        else
+            log "  キャパシティ変更は不要です"
+        fi
+    done
+    
+    # レポート生成
+    generate_gsi_report
+    
+    # Slack通知
+    if [ "$changes_made" = true ] && [ -n "$SLACK_WEBHOOK_URL" ]; then
+        curl -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"DynamoDB GSI Auto Scaling\\nTable: $TABLE_NAME\\n変更が適用されました。詳細はログを確認してください。\"}"
+    fi
+    
+    log "========== DynamoDB GSI Auto Scaling 完了 =========="
+}
+
+main

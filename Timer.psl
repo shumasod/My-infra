@@ -1,60 +1,241 @@
-# タイマー.ps1
+#Requires -Version 5.1
 
+<#
+.SYNOPSIS
+    カウントダウンタイマー
+
+.DESCRIPTION
+    指定された時間のカウントダウンタイマーをプログレスバー付きで表示します。
+
+.PARAMETER Minutes
+    タイマーの分数
+
+.PARAMETER Seconds
+    追加の秒数（オプション）
+
+.PARAMETER Silent
+    アラーム音を鳴らさない
+
+.PARAMETER Message
+    完了時に表示するカスタムメッセージ
+
+.EXAMPLE
+    .\Timer.ps1 -Minutes 5
+    5分間のタイマーを開始
+
+.EXAMPLE
+    .\Timer.ps1 -Minutes 2 -Seconds 30 -Message "休憩終了！"
+    2分30秒のタイマーをカスタムメッセージ付きで開始
+
+.EXAMPLE
+    .\Timer.ps1 -Minutes 10 -Silent
+    10分間のタイマーを音なしで開始
+#>
+
+[CmdletBinding()]
 param(
-    [Parameter(Mandatory=$true)]
-    [int]$Minutes
+    [Parameter(Mandatory = $true, Position = 0, HelpMessage = "タイマーの分数を指定")]
+    [ValidateRange(1, 1440)]
+    [int]$Minutes,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 59)]
+    [int]$Seconds = 0,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Silent,
+
+    [Parameter(Mandatory = $false)]
+    [string]$Message = "時間になりました！"
 )
 
-function Show-ProgressBar {
+#region 定数定義
+$Script:Config = @{
+    ProgressBarLength = 30
+    ProgressBarFilled = '█'
+    ProgressBarEmpty  = '░'
+    UpdateInterval    = 1
+    BeepFrequency     = 1000
+    BeepDuration      = 500
+    BeepCount         = 3
+    Colors            = @{
+        Title      = 'Cyan'
+        Time       = 'White'
+        Progress   = 'Green'
+        Complete   = 'Yellow'
+        Error      = 'Red'
+        Info       = 'Gray'
+    }
+}
+#endregion
+
+#region 関数定義
+
+<#
+.SYNOPSIS
+    プログレスバーを生成
+#>
+function New-ProgressBar {
+    [CmdletBinding()]
+    [OutputType([string])]
     param(
+        [Parameter(Mandatory = $true)]
+        [ValidateRange(0, 100)]
         [int]$Percent
     )
-    $progressBar = ""
-    $barLength = 20
-    $filledLength = [math]::Floor($barLength * $Percent / 100)
-    
-    for ($i = 0; $i -lt $barLength; $i++) {
-        if ($i -lt $filledLength) {
-            $progressBar += "█"
-        } else {
-            $progressBar += "░"
+
+    $filledLength = [Math]::Floor($Script:Config.ProgressBarLength * $Percent / 100)
+    $emptyLength = $Script:Config.ProgressBarLength - $filledLength
+
+    $filled = $Script:Config.ProgressBarFilled * $filledLength
+    $empty = $Script:Config.ProgressBarEmpty * $emptyLength
+
+    return "$filled$empty"
+}
+
+<#
+.SYNOPSIS
+    残り時間を表示
+#>
+function Show-RemainingTime {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [TimeSpan]$TimeLeft,
+
+        [Parameter(Mandatory = $true)]
+        [int]$PercentComplete
+    )
+
+    Clear-Host
+
+    # ヘッダー
+    Write-Host "`n   PowerShell タイマー" -ForegroundColor $Script:Config.Colors.Title
+    Write-Host "   ================================" -ForegroundColor $Script:Config.Colors.Title
+
+    # 残り時間
+    $hours = [Math]::Floor($TimeLeft.TotalHours)
+    $minutes = [Math]::Floor($TimeLeft.Minutes)
+    $seconds = [Math]::Floor($TimeLeft.Seconds)
+
+    Write-Host "`n   残り時間: " -NoNewline
+    if ($hours -gt 0) {
+        Write-Host "$hours 時間 $minutes 分 $seconds 秒" -ForegroundColor $Script:Config.Colors.Time
+    } else {
+        Write-Host "$minutes 分 $seconds 秒" -ForegroundColor $Script:Config.Colors.Time
+    }
+
+    # プログレスバー
+    $progressBar = New-ProgressBar -Percent $PercentComplete
+    Write-Host "`n   [$progressBar] $PercentComplete%" -ForegroundColor $Script:Config.Colors.Progress
+
+    # フッター
+    Write-Host "`n   進行状況: $PercentComplete% 完了" -ForegroundColor $Script:Config.Colors.Info
+    Write-Host "   Ctrl+C で終了`n" -ForegroundColor $Script:Config.Colors.Info
+}
+
+<#
+.SYNOPSIS
+    完了通知を表示・再生
+#>
+function Show-CompletionNotification {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Silent
+    )
+
+    Clear-Host
+
+    # 完了メッセージ
+    Write-Host "`n" -NoNewline
+    Write-Host "   ╔══════════════════════════════════════╗" -ForegroundColor $Script:Config.Colors.Complete
+    Write-Host "   ║                                      ║" -ForegroundColor $Script:Config.Colors.Complete
+    Write-Host "   ║        $Message" -NoNewline -ForegroundColor $Script:Config.Colors.Complete
+    Write-Host (" " * (22 - $Message.Length)) -NoNewline
+    Write-Host "║" -ForegroundColor $Script:Config.Colors.Complete
+    Write-Host "   ║                                      ║" -ForegroundColor $Script:Config.Colors.Complete
+    Write-Host "   ╚══════════════════════════════════════╝" -ForegroundColor $Script:Config.Colors.Complete
+    Write-Host ""
+
+    # アラーム音
+    if (-not $Silent) {
+        for ($i = 0; $i -lt $Script:Config.BeepCount; $i++) {
+            [Console]::Beep($Script:Config.BeepFrequency, $Script:Config.BeepDuration)
+            Start-Sleep -Milliseconds $Script:Config.BeepDuration
         }
     }
-    return $progressBar
 }
+
+<#
+.SYNOPSIS
+    タイマーのメイン処理
+#>
+function Start-CountdownTimer {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$TotalSeconds,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CompletionMessage,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Silent
+    )
+
+    $endTime = (Get-Date).AddSeconds($TotalSeconds)
+    $startTime = Get-Date
+
+    try {
+        while ((Get-Date) -lt $endTime) {
+            $timeLeft = $endTime - (Get-Date)
+            $elapsed = (Get-Date) - $startTime
+            $percentComplete = [Math]::Floor(($elapsed.TotalSeconds / $TotalSeconds) * 100)
+
+            Show-RemainingTime -TimeLeft $timeLeft -PercentComplete $percentComplete
+
+            Start-Sleep -Seconds $Script:Config.UpdateInterval
+        }
+
+        # 完了通知
+        Show-CompletionNotification -Message $CompletionMessage -Silent:$Silent
+
+    } catch {
+        Write-Host "`nタイマーが中断されました" -ForegroundColor $Script:Config.Colors.Error
+        throw
+    }
+}
+
+#endregion
+
+#region メイン処理
 
 try {
-    $totalSeconds = $Minutes * 60
-    $endTime = (Get-Date).AddSeconds($totalSeconds)
-    
-    while ((Get-Date) -lt $endTime) {
-        Clear-Host
-        
-        $timeLeft = $endTime - (Get-Date)
-        $minutesLeft = [math]::Floor($timeLeft.TotalMinutes)
-        $secondsLeft = [math]::Floor($timeLeft.TotalSeconds % 60)
-        
-        $percentComplete = 100 - ([math]::Floor($timeLeft.TotalSeconds / $totalSeconds * 100))
-        $progressBar = Show-ProgressBar -Percent $percentComplete
-        
-        Write-Host "`n   PowerShell タイマー" -ForegroundColor Cyan
-        Write-Host "=========================" -ForegroundColor Cyan
-        Write-Host "`n残り時間: $minutesLeft 分 $secondsLeft 秒`n"
-        Write-Host "[$progressBar]"
-        Write-Host "`nCtrl+C で終了"
-        
-        Start-Sleep -Seconds 1
-    }
-    
-    Clear-Host
-    Write-Host "`n時間になりました！" -ForegroundColor Yellow
-    
-    # アラーム音を3回鳴らす
-    for ($i = 0; $i -lt 3; $i++) {
-        [console]::beep(1000, 500)
-        Start-Sleep -Milliseconds 500
+    # パラメータ検証
+    $totalSeconds = ($Minutes * 60) + $Seconds
+
+    if ($totalSeconds -le 0) {
+        throw "時間は1秒以上を指定してください"
     }
 
+    # タイマー開始
+    Write-Host "`nタイマーを開始します: " -NoNewline
+    if ($Seconds -gt 0) {
+        Write-Host "$Minutes 分 $Seconds 秒" -ForegroundColor $Script:Config.Colors.Title
+    } else {
+        Write-Host "$Minutes 分" -ForegroundColor $Script:Config.Colors.Title
+    }
+    Start-Sleep -Seconds 1
+
+    Start-CountdownTimer -TotalSeconds $totalSeconds -CompletionMessage $Message -Silent:$Silent
+
 } catch {
-    Write-Host "`nタイマーが中断されました" -ForegroundColor Red
+    Write-Host "`nエラー: $_" -ForegroundColor $Script:Config.Colors.Error
+    exit 1
 }
+
+#endregion

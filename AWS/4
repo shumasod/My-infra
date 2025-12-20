@@ -1,0 +1,11 @@
+# ログイン
+argocd login localhost:8080
+
+# GitHubリポジトリ登録（HTTPS）
+argocd repo add https://github.com/<your-org>/<your-repo>.git \
+  --username <github-username> \
+  --password <github-pat>
+
+# SSH鍵の場合
+argocd repo add git@github.com:<your-org>/<your-repo>.git \
+  --ssh-private-key-path ~/.ssh/id_rsa

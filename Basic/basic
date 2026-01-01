@@ -33,7 +33,7 @@
 680 INPUT K$
 690 RETURN
 
-700 REM 連絡先を検索
+700 REM 連絡先を検索します。
 710 IF C = 0 THEN PRINT “登録されている連絡先はありません”: GOTO 790
 720 INPUT “検索する名前を入力: “, S$
 730 PRINT “検索結果:”

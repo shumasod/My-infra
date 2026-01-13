@@ -1,0 +1,56 @@
+---
+# Valkey Cluster Scale Up Playbook
+# クラスターへのノード追加を簡略化したプレイブック
+
+- name: Valkey Cluster Scale Up
+  hosts: valkey_new_nodes
+  become: yes
+  vars:
+    valkey_master_host: "{{ groups['valkey_cluster'][0] }}"
+    valkey_port: 6379
+    
+  tasks:
+    - name: 新規ノードの準備確認
+      wait_for:
+        host: "{{ ansible_default_ipv4.address }}"
+        port: "{{ valkey_port }}"
+        timeout: 30
+      
+    - name: 新規ノードをクラスターに追加
+      shell: |
+        /usr/local/bin/valkey-cli --cluster add-node \
+          {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
+          {{ hostvars[valkey_master_host]['ansible_default_ipv4']['address'] }}:{{ valkey_port }}
+      delegate_to: "{{ valkey_master_host }}"
+      register: add_result
+      
+    - name: 追加結果の表示
+      debug:
+        var: add_result.stdout_lines
+
+- name: Rebalance Cluster
+  hosts: "{{ groups['valkey_cluster'][0] }}"
+  become: yes
+  vars:
+    valkey_port: 6379
+    
+  tasks:
+    - name: クラスターのスロットを再配分
+      shell: |
+        /usr/local/bin/valkey-cli --cluster rebalance \
+          {{ ansible_default_ipv4.address }}:{{ valkey_port }} \
+          --cluster-use-empty-masters \
+          --cluster-threshold 1
+      register: rebalance_result
+      
+    - name: リバランス結果の表示
+      debug:
+        var: rebalance_result.stdout_lines
+        
+    - name: クラスター状態の確認
+      shell: /usr/local/bin/valkey-cli cluster info
+      register: cluster_status
+      
+    - name: クラスター状態の表示
+      debug:
+        var: cluster_status.stdout_lines

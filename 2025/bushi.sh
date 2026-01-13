@@ -1,152 +1,82 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# 端末の色サポートを確認
-if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
-    BLACK='\033[0;30m'
-    RED='\033[0;31m'
-    BLUE='\033[0;34m'
-    GRAY='\033[1;30m'
-    NC='\033[0m'    
+# =========================
+# Constants / Config
+# =========================
+readonly FRAME_INTERVAL="0.07"
+readonly TITLE="🐎 2026年 午年 — だいちを駆ける馬 🐎"
+
+# =========================
+# Terminal Color Utilities
+# =========================
+if [[ -t 1 ]] && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
+  readonly BROWN='\033[0;33m'
+  readonly WHITE='\033[1;37m'
+  readonly CYAN='\033[0;36m'
+  readonly NC='\033[0m'
 else
-    BLACK=''
-    RED=''
-    BLUE=''
-    GRAY=''
-    NC=''
+  readonly BROWN='' WHITE='' CYAN='' NC=''
 fi
 
-CLEAR='\033[2J'
-RESET='\033[H'
-
-#!/bin/bash
-
-# 武士の抜刀姿 ASCII Art
-# Samurai Drawing Sword
-
-clear
-
-# カラー設定
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-NC='\033[0m' # No Color
-
-echo -e "${CYAN}"
-echo "========================================"
-echo "     武士の抜刀姿 - Samurai Iaido"
-echo "========================================"
-echo -e "${NC}"
-echo
-
-# 武士のASCIIアート
-echo -e "${WHITE}                    ___"
-echo -e "                   /   \\"
-echo -e "                  | ${YELLOW}o   o${WHITE} |"
-echo -e "                   \\  -  /"
-echo -e "                    \\___/"
-echo -e "                     |||"
-echo -e "              ${GREEN}┌─────┴┴┴─────┐${WHITE}"
-echo -e "              ${GREEN}│    髷 (まげ)   │${WHITE}"
-echo -e "              ${GREEN}└─────────────┘${WHITE}"
-echo -e "                     |||"
-echo -e "             ${BLUE}╔═══════╤═══════╗${WHITE}"
-echo -e "             ${BLUE}║       │       ║${WHITE}     ${RED}/"
-echo -e "             ${BLUE}║   着  │  物   ║${WHITE}    ${RED}/"
-echo -e "             ${BLUE}║       │       ║${WHITE}   ${RED}/"
-echo -e "             ${BLUE}╠═══════╪═══════╣${WHITE}  ${RED}/"
-echo -e "             ${BLUE}║       │    \\  ║${WHITE} ${RED}/"
-echo -e "             ${BLUE}║       │     \\ ║${WHITE}${RED}/"
-echo -e "             ${BLUE}║       │      \\║${WHITE}${RED}    ${YELLOW}═══════════${WHITE}"
-echo -e "             ${BLUE}╚═══════╧═══════╝${WHITE}     ${YELLOW}刀 (katana)${WHITE}"
-echo -e "                    / \\"
-echo -e "                   /   \\"
-echo -e "                  /     \\"
-echo -e "                 /       \\"
-echo -e "                /         \\"
-echo -e "               ${GREEN}=============${WHITE}"
-echo -e "              ${GREEN}草履 (zōri)${WHITE}"
-echo -e "${NC}"
-
-# 侍の抜刀姿 
-samurai_battle() {
-    cat << "EOF"
-      △ △    
-     (｀_´)ノ
-    ξ/⌒Y⌒\⚔
-   ξ  | |   |
-     ／\| |  ｜
-    ｜  | |  ｜
-   ／＼ | |  ｜
-  ｜  ｜| |／｜
-  ｜  ｜L/ ＼|
-  ｜  ｜ \  ｜
-  ｜  ｜  \ ｜
-  し  し   ＼)
-EOF
+# =========================
+# Cleanup / Signal Handling
+# =========================
+cleanup() {
+  echo -e "${NC}"
+  echo
 }
 
-# 侍の切りかかる姿 (新規追加)
-samurai_attack() {
-    cat << "EOF"
-       △ △    
-      (｀皿´)   
-     ξ/   \⚔≡≡≡
-    ξ    |   |
-      ／\  |  ｜
-     ｜    |  ｜
-    ／＼   |  ｜
-   ｜  ｜ |／｜
-   ｜  ｜L/ ＼|
-   ｜  ｜ \  ｜
-   ｜  ｜  \ ｜
-   し  し   ＼)
-EOF
+trap cleanup INT TERM EXIT
+
+# =========================
+# Horse Frames (Running)
+# =========================
+readonly FRAMES=(
+"🐎💨        "
+" 🐎💨       "
+"  🐎💨      "
+"   🐎💨     "
+"    🐎💨    "
+"     🐎💨   "
+"      🐎💨  "
+"       🐎💨 "
+"        🐎💨"
+"       🐎💨 "
+"      🐎💨  "
+"     🐎💨   "
+"    🐎💨    "
+"   🐎💨     "
+"  🐎💨      "
+" 🐎💨       "
+)
+
+# =========================
+# Functions
+# =========================
+print_title() {
+  local year
+  year="$(date +%Y)"
+  echo -e "${CYAN}${year}年 午年 — 駆ける馬 🐎${NC}"
+  echo
 }
 
-# メッセージ表示関数
-show_message() {
-    echo -e "\n    ${1}"
+animate_horse() {
+  while true; do
+    for frame in "${FRAMES[@]}"; do
+      echo -ne "\r${BROWN}${frame}${NC}"
+      sleep "${FRAME_INTERVAL}"
+    done
+  done
 }
 
-# メイン処理
-clear 2>/dev/null || printf "\033c"
+# =========================
+# Main
+# =========================
+main() {
+  clear
+  print_title
+  animate_horse
+}
 
-echo -e "${BLUE}=============================${NC}"
-echo -e "${BLUE}        侍、参上！        ${NC}"
-echo -e "${BLUE}=============================${NC}"
-
-# アニメーション
-for i in {1..3}; do
-    # 画面をクリア
-    echo -e "${CLEAR}${RESET}"
-    
-    # 立ち姿
-    echo -e "${GRAY}"
-    samurai_standing
-    echo -e "${NC}"
-    show_message "見参！"
-    sleep 0.7 2>/dev/null || sleep 0.1
-    
-    # 抜刀姿
-    echo -e "${CLEAR}${RESET}"
-    echo -e "${BLUE}"
-    samurai_battle
-    echo -e "${NC}"
-    show_message "覚悟！"
-    sleep 0.7 2>/dev/null || sleep 0.1
-    
-    # 切りかかる姿
-    echo -e "${CLEAR}${RESET}"
-    echo -e "${RED}"
-    samurai_attack
-    echo -e "${NC}"
-    show_message "や〜！"
-    sleep 0.7 2>/dev/null || sleep 0.1
-done
-
-echo -e "\n${BLUE}=============================${NC}"
-echo -e "\n侍「拙者、${RED}弐千弐拾伍年${NC}の守護を仰せつかりました」"
-echo -e "侍「${BLUE}貴殿のご多幸${NC}を祈っておる」"
+main

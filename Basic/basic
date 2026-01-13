@@ -1,51 +1,51 @@
-10 REM 簡易アドレス帳プログラム
+10 REM 簡易アドレス帳プログラムです
 20 DIM N$(10), P$(10)
 30 LET C = 0
 40 CLS
-50 PRINT "簡易アドレス帳 - 最大10件"
-60 PRINT "1: 追加 2: 表示 3: 検索 4: 終了"
-70 INPUT "選択してください (1-4): ", S
-80 IF S = 1 THEN GOSUB 100
-90 IF S = 2 THEN GOSUB 200
-100 IF S = 3 THEN GOSUB 300
-110 IF S = 4 THEN GOTO 400
+50 PRINT “簡易アドレス帳 - 最大10件”
+60 PRINT “1: 追加 2: 表示 3: 検索 4: 終了”
+70 INPUT “選択してください (1-4): “, S
+80 IF S = 1 THEN GOSUB 500
+90 IF S = 2 THEN GOSUB 600
+95 IF S = 3 THEN GOSUB 700
+96 IF S = 4 THEN GOTO 800
 120 GOTO 40
 
-100 REM 連絡先を追加
-110 IF C >= 10 THEN PRINT "アドレス帳がいっぱいです！": RETURN
-120 PRINT "新しい連絡先を追加します"
-130 INPUT "名前: ", N$(C+1)
-140 INPUT "電話番号: ", P$(C+1)
-150 LET C = C + 1
-160 PRINT C; "件の連絡先が登録されています"
-170 PRINT "続けるには何かキーを押してください..."
-180 INPUT K$
-190 RETURN
+500 REM 連絡先を追加
+510 IF C >= 10 THEN PRINT “アドレス帳がいっぱいです！”: GOTO 590
+520 PRINT “新しい連絡先を追加します”
+530 INPUT “名前: “, N$(C+1)
+540 INPUT “電話番号: “, P$(C+1)
+550 LET C = C + 1
+560 PRINT C; “件の連絡先が登録されています”
+570 PRINT “続けるには何かキーを押してください…”
+580 INPUT K$
+590 RETURN
 
-200 REM 連絡先を表示
-210 IF C = 0 THEN PRINT "登録されている連絡先はありません": GOTO 270
-220 PRINT "登録されている連絡先一覧："
-230 FOR I = 1 TO C
-240 PRINT I; ": "; N$(I); " - "; P$(I)
-250 NEXT I
-260 PRINT "合計"; C; "件の連絡先があります"
-270 PRINT "続けるには何かキーを押してください..."
-280 INPUT K$
-290 RETURN
+600 REM 連絡先を表示
+610 IF C = 0 THEN PRINT “登録されている連絡先はありません”: GOTO 670
+620 PRINT “登録されている連絡先一覧：”
+630 FOR I = 1 TO C
+640 PRINT I; “: “; N$(I); “ - “; P$(I)
+650 NEXT I
+660 PRINT “合計”; C; “件の連絡先があります”
+670 PRINT “続けるには何かキーを押してください…”
+680 INPUT K$
+690 RETURN
 
-300 REM 連絡先を検索
-310 IF C = 0 THEN PRINT "登録されている連絡先はありません": GOTO 390
-320 INPUT "検索する名前を入力: ", S$
-330 PRINT "検索結果:"
-340 LET F = 0
-350 FOR I = 1 TO C
-360 IF INSTR(N$(I), S$) > 0 THEN PRINT I; ": "; N$(I); " - "; P$(I): LET F = F + 1
-370 NEXT I
-380 PRINT F; "件見つかりました"
-390 PRINT "続けるには何かキーを押してください..."
-395 INPUT K$
-397 RETURN
+700 REM 連絡先を検索します。
+710 IF C = 0 THEN PRINT “登録されている連絡先はありません”: GOTO 790
+720 INPUT “検索する名前を入力: “, S$
+730 PRINT “検索結果:”
+740 LET F = 0
+750 FOR I = 1 TO C
+760 IF INSTR(N$(I), S$) > 0 THEN PRINT I; “: “; N$(I); “ - “; P$(I): LET F = F + 1
+770 NEXT I
+780 PRINT F; “件見つかりました”
+790 PRINT “続けるには何かキーを押してください…”
+795 INPUT K$
+797 RETURN
 
-400 REM プログラム終了
-410 PRINT "プログラムを終了します"
-420 END
+800 REM プログラム終了
+810 PRINT “プログラムを終了します”
+820 END

@@ -1,66 +1,97 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-
-if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    RED='\033[0;31m'
-    NC='\033[0m'    
+# =========================
+# Terminal Color Utilities
+# =========================
+if [[ -t 1 ]] && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
+  readonly BROWN='\033[0;33m'
+  readonly YELLOW='\033[1;33m'
+  readonly RED='\033[0;31m'
+  readonly CYAN='\033[0;36m'
+  readonly WHITE='\033[1;37m'
+  readonly NC='\033[0m'
 else
-    GREEN=''
-    YELLOW=''
-    RED=''
-    NC=''
+  readonly BROWN='' YELLOW='' RED='' CYAN='' WHITE='' NC=''
 fi
 
-# Function to draw New Year decoration
+
+# =========================
+# Cleanup
+# =========================
+cleanup() {
+  echo -e "${NC}"
+}
+trap cleanup INT TERM EXIT
+
+# =========================
+# New Year Decoration
+# =========================
 draw_decoration() {
-    echo -e "${RED}    ❀ 迎春 ❀${NC}"
-    echo "   ==========="
+  echo -e "${RED}     ❀ 迎春 ❀${NC}"
+  echo "    ================="
 }
 
-# Function to draw snake
-draw_snake() {
-    echo -e "${GREEN}
-  ⠀　　＿＿
-　　／・・＼
-　　|_＿　　|
-　　　／ 　 /
-　　　￣|　/
-　　 　 │ (_ノ|
-　 　 　 ヽ＿ノ
-${NC}"
-    echo -e "     ${YELLOW}・${NC}  ${YELLOW}・${NC}"
-    echo "      ╲⎺╱"
-    echo -e "     ${GREEN}〜〜〜${NC}"
+# =========================
+# Horse ASCII Art
+# =========================
+draw_horse() {
+  echo -e "${BROWN}"
+  cat <<'HORSE'
+            ,w.
+          _/o o\_
+   .--._ /  ^_^  \ _.--.
+  /     `-._\___/_.-'     \
+ |   .-"""""`     `"""-.   |
+ |  /    _..-"""-.._    \  |
+ | |   .-'               '-.|
+  \ \  |     _.-"""-._      |
+   '.'. \_.-'"         "-._/
+      '-._                 \
+           "-._             |
+                "--..____..-'
+HORSE
+  echo -e "${NC}"
 }
 
-# Main execution
+# =========================
+# Functions
+# =========================
+print_messages() {
+  local year
+  year="$(date +%Y)"
+
+  local messages=(
+    "${year}年 午年"
+    "明けまして"
+    "おめでとうございます"
+    "本年も宜しく"
+    "お願いいたします"
+  )
+
+  for msg in "${messages[@]}"; do
+    sleep 1
+    echo -e "\n    ${CYAN}${msg}${NC}"
+  done
+}
+
+print_comment() {
+  echo
+  echo -e "🐎 馬「${YELLOW}今年は全力疾走。止まらず前へ進みます！${NC}」"
+}
+
+# =========================
+# Main
+# =========================
 main() {
-    # Clear the screen
-    clear 2>/dev/null || printf "\033c"
-
-    # Display New Year decoration and snake
-    draw_decoration
-    echo ""
-    draw_snake
-
-    # New Year's greetings animation
-    messages=(
-        "2025年 巳年"
-        "明けまして"
-        "おめでとうございます"
-        "本年も宜しく"
-        "お願いいたします"
-    )
-
-    for message in "${messages[@]}"; do
-        sleep 1 2>/dev/null || sleep 0.1
-        echo -e "\n    ${GREEN}${message}${NC}"
-    done
-
-    echo -e "\n蛇「${YELLOW}今年は私の年です！${NC}」"
+  clear 2>/dev/null || printf "\033c"
+  draw_decoration
+  echo
+  draw_horse
+  print_messages
+  print_comment
 }
 
-# Run main function
 main
+
+アゲ

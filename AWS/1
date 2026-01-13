@@ -1,0 +1,13 @@
+# eksctlインストール（未導入の場合）
+brew install eksctl
+
+# クラスター作成（検証用なので小さめ）
+eksctl create cluster \
+  --name maharaja-cluster \
+  --region ap-northeast-1 \
+  --nodegroup-name standard-nodes \
+  --node-type t3.medium \
+  --nodes 2 \
+  --nodes-min 1 \
+  --nodes-max 3 \
+  --managed

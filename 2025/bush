@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# =========================
+# Constants / Config
+# =========================
+readonly FRAME_INTERVAL="0.6"
+readonly TITLE="⚔️ SAMURAI MODE — 侍、出陣 ⚔️"
+
+# =========================
+# Terminal Color Utilities
+# =========================
+if [[ -t 1 ]] && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
+  readonly RED='\033[0;31m'
+  readonly YELLOW='\033[1;33m'
+  readonly BLUE='\033[0;34m'
+  readonly CYAN='\033[0;36m'
+  readonly WHITE='\033[1;37m'
+  readonly NC='\033[0m'
+else
+  readonly RED='' YELLOW='' BLUE='' CYAN='' WHITE='' NC=''
+fi
+
+# =========================
+# Cleanup / Signal Handling
+# =========================
+cleanup() {
+  echo -e "${NC}"
+  tput cnorm 2>/dev/null || true
+  clear
+  echo "侍、撤退。"
+}
+
+trap cleanup INT TERM EXIT
+
+# =========================
+# Frames
+# =========================
+readonly FRAMES=(
+"${CYAN}
+            ／￣￣￣￣￣￣￣￣＼
+           /　　${WHITE}刀を抜く……${CYAN}　　  \\
+          |　 　┌───┐　　  |
+          |　 　｜${WHITE}侍${CYAN}｜　　  |
+           \\＿＿＿＿＿＿＿＿／
+                 ⌒
+        ┏━━━━━━━━┓
+        ┃　／￣￣￣＼　┃
+        ┃｜ ${WHITE}●   ●${CYAN} ｜┃
+        ┃｜   ▼      ｜┃
+        ┃　＼＿＿＿／　┃
+        ┗━━━━━━━━┛
+             ││┌――――┐││
+         ┏━━┛┃${YELLOW} 胴当て ${CYAN}┃┗━━┓
+         ┃     └――――┘      ┃
+         ┃      ／││││＼     ┃
+         ┃     │ │ │ │ ││     ┃
+         ┃      ＼││││／     ┃
+         ┗━━━━━━━━━━━━━━━┛
+              ／     ││     ＼
+            ／       ││       ＼
+          ／         ││         ＼
+        ／           ││           ＼
+${NC}"
+"${CYAN}
+            ／￣￣￣￣￣￣￣￣＼
+           /　　${WHITE}勝負だ……！${CYAN}　　  \\
+          |　 　┌───┐　　  |
+          |　 　｜${WHITE}侍${CYAN}｜　　  |
+           \\＿＿＿＿＿＿＿＿／
+                 ⌒
+        ┏━━━━━━━━┓
+        ┃　／￣￣￣＼　┃
+        ┃｜ ${WHITE}●   ●${CYAN} ｜┃
+        ┃｜   ▼      ｜┃
+        ┃　＼＿＿＿／　┃
+        ┗━━━━━━━━┛
+             ││┌――――┐││
+         ┏━━┛┃${YELLOW} 胴当て ${CYAN}┃┗━━┓
+         ┃     └――――┘      ┃
+         ┃      ／││││＼     ┃
+         ┃     │ │ │ │ ││     ┃
+         ┃      ＼││││／     ┃
+         ┗━━━━━━━━━━━━━━━┛
+              ／     ││     ＼
+            ／   ${RED}=== 刀 閃 ===${CYAN}    ＼
+          ／         ││         ＼
+        ／           ││           ＼
+${NC}"
+)
+
+# =========================
+# Functions
+# =========================
+init_screen() {
+  clear
+  tput civis 2>/dev/null || true
+  echo -e "${WHITE}${TITLE}${NC}\n"
+  sleep 1
+}
+
+render_frames() {
+  while true; do
+    for frame in "${FRAMES[@]}"; do
+      echo -ne "\033[H"
+      echo -e "$frame"
+      sleep "$FRAME_INTERVAL"
+    done
+  done
+}
+
+# =========================
+# Main
+# =========================
+main() {
+  init_screen
+  render_frames
+}
+
+main

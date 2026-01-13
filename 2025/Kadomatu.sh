@@ -1,15 +1,25 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# 文字色を設定
-GREEN='\033[0;32m'
-BROWN='\033[0;33m'
-RED='\033[0;31m'
-WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+# =========================
+# Terminal Color Utilities
+# =========================
+if [[ -t 1 ]]; then
+  readonly GREEN='\033[0;32m'
+  readonly BROWN='\033[0;33m'
+  readonly RED='\033[0;31m'
+  readonly WHITE='\033[1;37m'
+  readonly NC='\033[0m'
+else
+  readonly GREEN='' BROWN='' RED='' WHITE='' NC=''
+fi
 
-# 門松のアスキーアート
-echo -e "${GREEN}"
-cat << "EOF"
+# =========================
+# Functions
+# =========================
+print_art() {
+  echo -e "${GREEN}"
+  cat <<'EOF'
 ⠀　　　_〆
 　　 　 (∴:)
 　　 （￣￣ ）
@@ -19,16 +29,33 @@ cat << "EOF"
 　　|▲　　▲|
 　　|＿ |⌒| ＿|
 EOF
-echo -e "${NC}"
+  echo -e "${NC}"
+}
 
-# 新年の挨拶
-echo -e "${RED}明けましておめでとうございます${NC}"
-echo -e "${RED}謹んで新年のお慶びを申し上げます${NC}"
+get_reiwa_year() {
+  local year="$1"
 
-# 現在の年を取得して表示
-YEAR=$(date +%Y)
-# 令和の年号を計算 (2019年が令和元年)
-REIWA=$((YEAR - 2018))
+  # 2019年 = 令和元年
+  if (( year < 2019 )); then
+    echo "令和以前"
+  else
+    echo "令和$((year - 2018))"
+  fi
+}
 
-echo ""
-echo -e "${WHITE}${YEAR}年（令和${REIWA}年）も宜しくお願いいたします${NC}"
+print_greeting() {
+  local year reiwa
+  year="$(date +%Y)"
+  reiwa="$(get_reiwa_year "$year")"
+
+  echo -e "${RED}明けましておめでとうございます${NC}"
+  echo -e "${RED}謹んで新年のお慶びを申し上げます${NC}"
+  echo
+  echo -e "${WHITE}${year}年（${reiwa}年）も宜しくお願いいたします${NC}"
+}
+
+# =========================
+# Main
+# =========================
+print_art
+print_greeting

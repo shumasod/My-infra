@@ -1,24 +1,42 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# === カラー設定 ===
-if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
-    RED='\033[0;31m'
-    YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
-    CYAN='\033[0;36m'
-    WHITE='\033[1;37m'
-    NC='\033[0m'
+# =========================
+# Constants / Config
+# =========================
+readonly FRAME_INTERVAL="0.6"
+readonly TITLE="⚔️ SAMURAI MODE — 侍、出陣 ⚔️"
+
+# =========================
+# Terminal Color Utilities
+# =========================
+if [[ -t 1 ]] && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
+  readonly RED='\033[0;31m'
+  readonly YELLOW='\033[1;33m'
+  readonly BLUE='\033[0;34m'
+  readonly CYAN='\033[0;36m'
+  readonly WHITE='\033[1;37m'
+  readonly NC='\033[0m'
 else
-    RED=''
-    YELLOW=''
-    BLUE=''
-    CYAN=''
-    WHITE=''
-    NC=''
+  readonly RED='' YELLOW='' BLUE='' CYAN='' WHITE='' NC=''
 fi
 
-# === ASCIIアートのフレーム ===
-frames=(
+# =========================
+# Cleanup / Signal Handling
+# =========================
+cleanup() {
+  echo -e "${NC}"
+  tput cnorm 2>/dev/null || true
+  clear
+  echo "侍、撤退。"
+}
+
+trap cleanup INT TERM EXIT
+
+# =========================
+# Frames
+# =========================
+readonly FRAMES=(
 "${CYAN}
             ／￣￣￣￣￣￣￣￣＼
            /　　${WHITE}刀を抜く……${CYAN}　　  \\
@@ -65,25 +83,38 @@ ${NC}"
          ┃      ＼││││／     ┃
          ┗━━━━━━━━━━━━━━━┛
               ／     ││     ＼
-            ／   ${RED}===刀閃===${CYAN}    ＼
+            ／   ${RED}=== 刀 閃 ===${CYAN}    ＼
           ／         ││         ＼
         ／           ││           ＼
 ${NC}"
 )
 
-# === メイン ===
-main() {
-    clear
-    echo -e "${WHITE}⚔️ SAMURAI MODE — 侍、出陣 ⚔️${NC}\n"
-    sleep 1
+# =========================
+# Functions
+# =========================
+init_screen() {
+  clear
+  tput civis 2>/dev/null || true
+  echo -e "${WHITE}${TITLE}${NC}\n"
+  sleep 1
+}
 
-    while true; do
-        for frame in "${frames[@]}"; do
-            echo -ne "\033[H"  # カーソルを左上に戻す
-            echo -e "$frame"
-            sleep 0.6
-        done
+render_frames() {
+  while true; do
+    for frame in "${FRAMES[@]}"; do
+      echo -ne "\033[H"
+      echo -e "$frame"
+      sleep "$FRAME_INTERVAL"
     done
+  done
+}
+
+# =========================
+# Main
+# =========================
+main() {
+  init_screen
+  render_frames
 }
 
 main

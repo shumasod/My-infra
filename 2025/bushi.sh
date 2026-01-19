@@ -1,57 +1,82 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-# === カラー設定 ===
-if [ -t 1 ] && [ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]; then
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    CYAN='\033[0;36m'
-    NC='\033[0m'
+# =========================
+# Constants / Config
+# =========================
+readonly FRAME_INTERVAL="0.07"
+readonly TITLE="🐎 2026年 午年 — だいちを駆ける馬 🐎"
+
+# =========================
+# Terminal Color Utilities
+# =========================
+if [[ -t 1 ]] && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
+  readonly BROWN='\033[0;33m'
+  readonly WHITE='\033[1;37m'
+  readonly CYAN='\033[0;36m'
+  readonly NC='\033[0m'
 else
-    GREEN=''
-    YELLOW=''
-    CYAN=''
-    NC=''
+  readonly BROWN='' WHITE='' CYAN='' NC=''
 fi
 
-# === 蛇のパターン（くねくね用） ===
-frames=(
-"🐍~~~~~~~"
-"~🐍~~~~~~"
-"~~🐍~~~~~"
-"~~~🐍~~~~"
-"~~~~🐍~~~"
-"~~~~~🐍~~"
-"~~~~~~🐍~"
-"~~~~~~~🐍"
-"~~~~~~🐍~"
-"~~~~~🐍~~"
-"~~~~🐍~~~"
-"~~~🐍~~~~"
-"~~🐍~~~~~"
-"~🐍~~~~~~"
-)
-
-# === タイトル ===
-draw_decoration() {
-    echo -e "${YELLOW}     ❀ 迎春 ❀${NC}"
-    echo "    ================="
-    echo ""
+# =========================
+# Cleanup / Signal Handling
+# =========================
+cleanup() {
+  echo -e "${NC}"
+  echo
 }
 
-# === メイン処理 ===
-main() {
-    clear
-    draw_decoration
-    echo -e "${CYAN}2025年 巳年 — 動く蛇🐍${NC}"
-    echo ""
+trap cleanup INT TERM EXIT
 
-    # 無限ループ（Ctrl+Cで止める）
-    while true; do
-        for frame in "${frames[@]}"; do
-            echo -ne "\r${GREEN}${frame}${NC}"
-            sleep 0.08
-        done
+# =========================
+# Horse Frames (Running)
+# =========================
+readonly FRAMES=(
+"🐎💨        "
+" 🐎💨       "
+"  🐎💨      "
+"   🐎💨     "
+"    🐎💨    "
+"     🐎💨   "
+"      🐎💨  "
+"       🐎💨 "
+"        🐎💨"
+"       🐎💨 "
+"      🐎💨  "
+"     🐎💨   "
+"    🐎💨    "
+"   🐎💨     "
+"  🐎💨      "
+" 🐎💨       "
+)
+
+# =========================
+# Functions
+# =========================
+print_title() {
+  local year
+  year="$(date +%Y)"
+  echo -e "${CYAN}${year}年 午年 — 駆ける馬 🐎${NC}"
+  echo
+}
+
+animate_horse() {
+  while true; do
+    for frame in "${FRAMES[@]}"; do
+      echo -ne "\r${BROWN}${frame}${NC}"
+      sleep "${FRAME_INTERVAL}"
     done
+  done
+}
+
+# =========================
+# Main
+# =========================
+main() {
+  clear
+  print_title
+  animate_horse
 }
 
 main

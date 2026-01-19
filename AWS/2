@@ -1,0 +1,8 @@
+# namespace作成
+kubectl create namespace argocd
+
+# Argo CD インストール
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# インストール確認
+kubectl get pods -n argocd

@@ -4,43 +4,36 @@ set -euo pipefail
 #
 # シェルスクリプトカラオケ
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 1.1
 #
-# ターミナルベースのカラオケアプリケーション
-# 歌詞をカラオケ風に表示します
+# 概要:
+#   ターミナルベースのカラオケアプリケーション
+#   歌詞をカラオケ風に色分けして表示します
 #
+# 使用例:
+#   ./karaoke.sh                # インタラクティブメニュー
+#   ./karaoke.sh list           # 曲一覧
+#   ./karaoke.sh play "きらきら星"
+#   ./karaoke.sh demo           # デモ再生
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly VERSION="1.1"
 readonly SONGS_DIR="${SCRIPT_DIR}/songs"
 
-# 色定義
-readonly C_RESET='\033[0m'
-readonly C_BOLD='\033[1m'
-readonly C_DIM='\033[2m'
-readonly C_BLINK='\033[5m'
-readonly C_RED='\033[1;31m'
-readonly C_GREEN='\033[1;32m'
-readonly C_YELLOW='\033[1;33m'
-readonly C_BLUE='\033[1;34m'
-readonly C_MAGENTA='\033[1;35m'
-readonly C_CYAN='\033[1;36m'
-readonly C_WHITE='\033[1;37m'
-readonly C_BG_BLUE='\033[44m'
-readonly C_BG_MAGENTA='\033[45m'
-readonly C_BG_CYAN='\033[46m'
-
-# カラオケ用色
+# カラオケ専用色定義
 readonly C_SUNG='\033[1;33m'        # 歌った部分（黄色）
 readonly C_CURRENT='\033[1;37;44m'  # 現在の部分（白地に青背景）
 readonly C_UPCOMING='\033[1;37m'    # これから歌う部分（白）
-readonly C_TITLE='\033[1;36m'       # タイトル（シアン）
+readonly C_TITLE_BAR='\033[1;36m'   # タイトル（シアン）
 
 # ===== グローバル変数 =====
-declare -i terminal_rows=24
-declare -i terminal_cols=80
 declare current_song=""
 declare -a lyrics=()
 declare -a timings=()
@@ -49,6 +42,9 @@ declare -i max_score=0
 
 # ===== ヘルパー関数 =====
 
+#
+# 使用方法を表示
+#
 show_usage() {
     cat <<EOF
 ${C_CYAN}シェルスクリプトカラオケ${C_RESET} v${VERSION}
@@ -73,58 +69,9 @@ ${C_CYAN}シェルスクリプトカラオケ${C_RESET} v${VERSION}
 EOF
 }
 
-# ターミナルサイズを取得
-update_terminal_size() {
-    terminal_rows=$(tput lines 2>/dev/null || echo 24)
-    terminal_cols=$(tput cols 2>/dev/null || echo 80)
-}
-
-# 画面をクリア
-clear_screen() {
-    printf '\033[2J\033[H'
-}
-
-# カーソルを移動
-move_cursor() {
-    printf '\033[%d;%dH' "$1" "$2"
-}
-
-# カーソルを非表示
-hide_cursor() {
-    tput civis 2>/dev/null || true
-}
-
-# カーソルを表示
-show_cursor() {
-    tput cnorm 2>/dev/null || true
-}
-
-# 中央揃えで表示
-print_center() {
-    local text="$1"
-    local row="${2:-}"
-    local color="${3:-}"
-
-    # ANSIエスケープシーケンスを除去してテキスト長を計算
-    local plain_text
-    plain_text=$(echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g')
-    local text_len=${#plain_text}
-    local col=$(( (terminal_cols - text_len) / 2 ))
-
-    if [[ $col -lt 1 ]]; then
-        col=1
-    fi
-
-    if [[ -n "$row" ]]; then
-        move_cursor "$row" "$col"
-    fi
-
-    if [[ -n "$color" ]]; then
-        echo -ne "${color}${text}${C_RESET}"
-    else
-        echo -ne "$text"
-    fi
-}
+# 共通ライブラリから提供される関数:
+# - update_terminal_size, clear_screen, move_cursor
+# - hide_cursor, show_cursor, print_center
 
 # ===== カラオケ表示関数 =====
 
@@ -240,13 +187,13 @@ draw_karaoke_frame() {
     # タイトルバー
     move_cursor 1 1
     echo -ne "${C_BG_MAGENTA}${C_WHITE}"
-    printf "%-${terminal_cols}s" "  ♪ $title"
+    printf "%-${TERM_COLS}s" "  ♪ $title"
     echo -ne "${C_RESET}"
 
     # 下部のコントロールバー
-    move_cursor "$terminal_rows" 1
+    move_cursor "$TERM_ROWS" 1
     echo -ne "${C_BG_CYAN}${C_WHITE}"
-    printf "%-${terminal_cols}s" "  [Space] 一時停止  [Q] 終了  [←/→] シーク"
+    printf "%-${TERM_COLS}s" "  [Space] 一時停止  [Q] 終了  [←/→] シーク"
     echo -ne "${C_RESET}"
 }
 
@@ -261,7 +208,7 @@ display_lyrics() {
     [[ $display_start -lt 0 ]] && display_start=0
     [[ $display_end -ge ${#lyrics[@]} ]] && display_end=$((${#lyrics[@]} - 1))
 
-    local center_row=$(( terminal_rows / 2 ))
+    local center_row=$(( TERM_ROWS / 2 ))
     local row=$((center_row - (current_index - display_start)))
 
     for ((i = display_start; i <= display_end; i++)); do
@@ -274,7 +221,7 @@ display_lyrics() {
         local display_lyric=""
 
         move_cursor "$row" 1
-        printf "%-${terminal_cols}s" ""  # 行をクリア
+        printf "%-${TERM_COLS}s" ""  # 行をクリア
 
         if [[ $i -lt $current_index ]]; then
             # 既に歌った行
@@ -288,7 +235,7 @@ display_lyrics() {
             local sung_part="${lyric:0:$sung_len}"
             local remaining_part="${lyric:$sung_len}"
 
-            local col=$(( (terminal_cols - lyric_len) / 2 ))
+            local col=$(( (TERM_COLS - lyric_len) / 2 ))
             [[ $col -lt 1 ]] && col=1
 
             move_cursor "$row" "$col"
@@ -313,7 +260,7 @@ draw_progress_bar() {
     local current=$1
     local total=$2
 
-    local bar_width=$((terminal_cols - 20))
+    local bar_width=$((TERM_COLS - 20))
     local filled=$(echo "$bar_width * $current / $total" | bc 2>/dev/null || echo 0)
     [[ -z "$filled" ]] && filled=0
     [[ $filled -gt $bar_width ]] && filled=$bar_width
@@ -325,7 +272,7 @@ draw_progress_bar() {
     local total_min=$((total / 60))
     local total_sec=$((total % 60))
 
-    move_cursor $((terminal_rows - 1)) 1
+    move_cursor $((TERM_ROWS - 1)) 1
     printf "  %02d:%02d [" "$current_min" "$current_sec"
 
     echo -ne "${C_CYAN}"
@@ -392,7 +339,7 @@ play_karaoke() {
         fi
 
         if $paused; then
-            move_cursor $((terminal_rows / 2 - 5)) 1
+            move_cursor $((TERM_ROWS / 2 - 5)) 1
             print_center "⏸ 一時停止中 - Spaceキーで再開" "" "${C_YELLOW}"
             continue
         fi

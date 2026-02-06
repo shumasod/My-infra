@@ -4,46 +4,27 @@ set -euo pipefail
 #
 # シェルスクリプトチャット - クライアント
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 1.1
 #
-# TUIベースのチャットクライアント
+# 概要:
+#   TUIベースのチャットクライアント
+#   リアルタイムでメッセージを送受信し、色分け表示をサポート
 #
+# 使用例:
+#   ./chat_client.sh                       # generalルームに参加
+#   ./chat_client.sh -r myroom -u Alice    # myroomにAliceとして参加
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
+readonly VERSION="1.1"
 readonly DEFAULT_ROOM_DIR="/tmp/shell_chat"
 readonly REFRESH_INTERVAL=1
-
-# 色定義（ANSI エスケープコード）
-readonly C_RESET='\033[0m'
-readonly C_BOLD='\033[1m'
-readonly C_DIM='\033[2m'
-readonly C_RED='\033[1;31m'
-readonly C_GREEN='\033[1;32m'
-readonly C_YELLOW='\033[1;33m'
-readonly C_BLUE='\033[1;34m'
-readonly C_MAGENTA='\033[1;35m'
-readonly C_CYAN='\033[1;36m'
-readonly C_WHITE='\033[1;37m'
-readonly C_BG_BLUE='\033[44m'
-readonly C_BG_GRAY='\033[100m'
-
-# ユーザー名の色パレット
-readonly -a USER_COLORS=(
-    '\033[1;31m'  # 赤
-    '\033[1;32m'  # 緑
-    '\033[1;33m'  # 黄
-    '\033[1;34m'  # 青
-    '\033[1;35m'  # マゼンタ
-    '\033[1;36m'  # シアン
-    '\033[1;91m'  # 明るい赤
-    '\033[1;92m'  # 明るい緑
-    '\033[1;93m'  # 明るい黄
-    '\033[1;94m'  # 明るい青
-    '\033[1;95m'  # 明るいマゼンタ
-    '\033[1;96m'  # 明るいシアン
-)
 
 # ===== グローバル変数 =====
 declare room_dir="${DEFAULT_ROOM_DIR}"
@@ -51,16 +32,17 @@ declare room_name="general"
 declare user_name=""
 declare room_path=""
 declare last_line_count=0
-declare -i terminal_rows=24
-declare -i terminal_cols=80
 declare -i chat_height=18
 declare running=true
 
 # ===== ヘルパー関数 =====
 
+#
+# 使用方法を表示
+#
 show_usage() {
     cat <<EOF
-シェルスクリプトチャット - クライアント
+${C_CYAN}シェルスクリプトチャット - クライアント${C_RESET}
 
 使用方法: $PROG_NAME [オプション]
 
@@ -78,50 +60,18 @@ show_usage() {
 EOF
 }
 
-error_exit() {
-    echo -e "${C_RED}エラー: $1${C_RESET}" >&2
-    exit 1
-}
+# error_exit, get_user_color, update_terminal_size, clear_screen,
+# move_cursor, clear_line は共通ライブラリから提供
 
-# ユーザー名からハッシュを計算して色を決定
-get_user_color() {
-    local name="$1"
-    local hash=0
-    local i
-
-    for ((i=0; i<${#name}; i++)); do
-        hash=$((hash + $(printf '%d' "'${name:i:1}")))
-    done
-
-    local color_index=$((hash % ${#USER_COLORS[@]}))
-    echo "${USER_COLORS[color_index]}"
-}
-
-# ターミナルサイズを取得
-update_terminal_size() {
-    terminal_rows=$(tput lines 2>/dev/null || echo 24)
-    terminal_cols=$(tput cols 2>/dev/null || echo 80)
-    chat_height=$((terminal_rows - 6))
+#
+# チャット画面の高さを計算
+#
+update_chat_height() {
+    update_terminal_size
+    chat_height=$((TERM_ROWS - 6))
     if [[ $chat_height -lt 5 ]]; then
         chat_height=5
     fi
-}
-
-# 画面をクリア
-clear_screen() {
-    printf '\033[2J\033[H'
-}
-
-# カーソルを移動
-move_cursor() {
-    local row=$1
-    local col=$2
-    printf '\033[%d;%dH' "$row" "$col"
-}
-
-# 行をクリア
-clear_line() {
-    printf '\033[2K'
 }
 
 # ===== UI描画関数 =====
@@ -134,12 +84,12 @@ draw_header() {
 
     move_cursor 1 1
     echo -ne "${C_BG_BLUE}${C_WHITE}${C_BOLD}"
-    printf "%-${terminal_cols}s" " ${title}"
+    printf "%-${TERM_COLS}s" " ${title}"
     echo -ne "${C_RESET}"
 
     move_cursor 2 1
     echo -ne "${C_BG_GRAY}${C_WHITE}"
-    printf "%-${terminal_cols}s" " ${room_info} | ${user_info} | Ctrl+C: 終了"
+    printf "%-${TERM_COLS}s" " ${room_info} | ${user_info} | Ctrl+C: 終了"
     echo -ne "${C_RESET}"
 }
 
@@ -148,7 +98,7 @@ draw_separator() {
     local row=$1
     move_cursor "$row" 1
     echo -ne "${C_DIM}"
-    printf '%.0s─' $(seq 1 "$terminal_cols")
+    printf '%.0s─' $(seq 1 "$TERM_COLS")
     echo -ne "${C_RESET}"
 }
 
@@ -204,7 +154,7 @@ draw_messages() {
 
 # 入力エリアを描画
 draw_input_area() {
-    local input_row=$((terminal_rows - 2))
+    local input_row=$((TERM_ROWS - 2))
 
     draw_separator "$((input_row - 1))"
 
@@ -213,9 +163,11 @@ draw_input_area() {
     echo -ne " ${C_GREEN}>${C_RESET} "
 }
 
+#
 # 全体を描画
+#
 draw_screen() {
-    update_terminal_size
+    update_chat_height
     draw_header
     draw_messages
     draw_input_area
@@ -286,13 +238,13 @@ send_system_message() {
     } 200>"${room_path}/.lock"
 }
 
+#
 # クリーンアップ処理
+#
 cleanup() {
     running=false
     leave_room
-    # カーソルを表示
-    tput cnorm 2>/dev/null || true
-    # 画面をクリア
+    show_cursor
     clear_screen
     move_cursor 1 1
     echo "チャットを終了しました。"
@@ -318,12 +270,14 @@ watch_messages() {
 
 # ===== メインループ =====
 
+#
+# チャットを実行
+#
 run_chat() {
     # シグナルハンドラ設定
     trap cleanup EXIT INT TERM
 
-    # カーソルを非表示
-    tput civis 2>/dev/null || true
+    hide_cursor
 
     # 初期画面描画
     clear_screen
@@ -337,10 +291,10 @@ run_chat() {
     local watcher_pid=$!
 
     # カーソルを表示（入力用）
-    tput cnorm 2>/dev/null || true
+    show_cursor
 
     # 入力ループ
-    local input_row=$((terminal_rows - 2))
+    local input_row=$((TERM_ROWS - 2))
     while $running; do
         move_cursor "$input_row" 5
         clear_line

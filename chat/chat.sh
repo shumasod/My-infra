@@ -4,30 +4,27 @@ set -euo pipefail
 #
 # シェルスクリプトチャット - ランチャー
 # 作成日: 2024
-# バージョン: 2.0
+# バージョン: 2.1
 #
-# チャットサーバー/クライアント/グループを簡単に管理するためのランチャー
+# 概要:
+#   チャットサーバー/クライアント/グループを簡単に管理するためのランチャー
+#   インタラクティブメニューまたはコマンドラインから操作可能
 #
+# 使用例:
+#   ./chat.sh                  # インタラクティブメニュー
+#   ./chat.sh quick            # クイックスタート
+#   ./chat.sh group create "開発チーム"
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="2.0"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly VERSION="2.1"
 readonly DEFAULT_CHAT_DIR="/tmp/shell_chat"
-
-# 色定義
-readonly C_RESET='\033[0m'
-readonly C_BOLD='\033[1m'
-readonly C_DIM='\033[2m'
-readonly C_RED='\033[1;31m'
-readonly C_GREEN='\033[1;32m'
-readonly C_YELLOW='\033[1;33m'
-readonly C_BLUE='\033[1;34m'
-readonly C_MAGENTA='\033[1;35m'
-readonly C_CYAN='\033[1;36m'
-readonly C_WHITE='\033[1;37m'
-readonly C_BG_BLUE='\033[44m'
-readonly C_BG_MAGENTA='\033[45m'
 
 # ===== グローバル変数 =====
 declare current_user="${USER:-anonymous}"

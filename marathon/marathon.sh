@@ -4,33 +4,27 @@ set -euo pipefail
 #
 # 24時間マラソン シミュレーター
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 1.1
 #
-# 24時間テレビ風の100kmマラソンをシミュレートします
+# 概要:
+#   24時間テレビ風の100kmマラソンをシミュレートします
+#   リアルタイム進捗表示、ランナーアニメーション、ゴール演出をサポート
 #
+# 使用例:
+#   ./marathon.sh                     # インタラクティブメニュー
+#   ./marathon.sh start               # マラソン開始
+#   ./marathon.sh demo                # デモモード（高速）
+#   ./marathon.sh start -n "山田太郎"
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# 色定義
-readonly C_RESET='\033[0m'
-readonly C_BOLD='\033[1m'
-readonly C_DIM='\033[2m'
-readonly C_BLINK='\033[5m'
-readonly C_RED='\033[1;31m'
-readonly C_GREEN='\033[1;32m'
-readonly C_YELLOW='\033[1;33m'
-readonly C_BLUE='\033[1;34m'
-readonly C_MAGENTA='\033[1;35m'
-readonly C_CYAN='\033[1;36m'
-readonly C_WHITE='\033[1;37m'
-readonly C_BG_RED='\033[41m'
-readonly C_BG_GREEN='\033[42m'
-readonly C_BG_YELLOW='\033[43m'
-readonly C_BG_BLUE='\033[44m'
-readonly C_BG_MAGENTA='\033[45m'
+readonly VERSION="1.1"
 
 # ===== グローバル変数 =====
 declare runner_name="ランナー"
@@ -38,8 +32,6 @@ declare -i total_distance=100  # km
 declare -i time_limit=24       # hours
 declare -i current_distance=0
 declare -i elapsed_seconds=0
-declare -i terminal_rows=24
-declare -i terminal_cols=80
 declare running=true
 declare -i speed_multiplier=60  # 1秒 = 1分（デモ用）
 
@@ -64,6 +56,9 @@ readonly -a CHEER_MESSAGES=(
 
 # ===== ヘルパー関数 =====
 
+#
+# 使用方法を表示
+#
 show_usage() {
     cat <<EOF
 ${C_YELLOW}24時間マラソン シミュレーター${C_RESET} v${VERSION}
@@ -91,52 +86,9 @@ ${C_YELLOW}24時間マラソン シミュレーター${C_RESET} v${VERSION}
 EOF
 }
 
-update_terminal_size() {
-    terminal_rows=$(tput lines 2>/dev/null || echo 24)
-    terminal_cols=$(tput cols 2>/dev/null || echo 80)
-}
-
-clear_screen() {
-    printf '\033[2J\033[H'
-}
-
-move_cursor() {
-    printf '\033[%d;%dH' "$1" "$2"
-}
-
-hide_cursor() {
-    tput civis 2>/dev/null || true
-}
-
-show_cursor() {
-    tput cnorm 2>/dev/null || true
-}
-
-# 中央揃えで表示
-print_center() {
-    local text="$1"
-    local row="${2:-}"
-
-    local plain_text
-    plain_text=$(echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g')
-    local text_len=${#plain_text}
-    local col=$(( (terminal_cols - text_len) / 2 ))
-    [[ $col -lt 1 ]] && col=1
-
-    if [[ -n "$row" ]]; then
-        move_cursor "$row" "$col"
-    fi
-    echo -ne "$text"
-}
-
-# 時間をフォーマット
-format_time() {
-    local seconds=$1
-    local hours=$((seconds / 3600))
-    local minutes=$(((seconds % 3600) / 60))
-    local secs=$((seconds % 60))
-    printf "%02d:%02d:%02d" "$hours" "$minutes" "$secs"
-}
+# 共通ライブラリから提供される関数:
+# - update_terminal_size, clear_screen, move_cursor
+# - hide_cursor, show_cursor, print_center, format_time
 
 # ===== マラソン表示関数 =====
 
@@ -211,7 +163,7 @@ draw_progress_bar() {
     local current=$1
     local total=$2
     local row=$3
-    local width=$((terminal_cols - 20))
+    local width=$((TERM_COLS - 20))
 
     local filled=$((width * current / total))
     [[ $filled -gt $width ]] && filled=$width
@@ -247,7 +199,7 @@ draw_marathon_screen() {
     # タイトルバー
     move_cursor 1 1
     echo -ne "${C_BG_YELLOW}${C_RED}${C_BOLD}"
-    printf "%-${terminal_cols}s" "  24時間テレビ「愛は地球を救う」 ${total_distance}kmマラソン"
+    printf "%-${TERM_COLS}s" "  24時間テレビ「愛は地球を救う」 ${total_distance}kmマラソン"
     echo -ne "${C_RESET}"
 
     # ランナー情報
@@ -276,15 +228,15 @@ draw_marathon_screen() {
     print_center "${C_CYAN}経過時間: ${elapsed_str}${C_RESET}    ${C_MAGENTA}残り時間: ${remaining_str}${C_RESET}" 9
 
     # ランナーのアスキーアート
-    local runner_col=$((5 + (terminal_cols - 15) * distance_m / (total_distance * 1000)))
-    [[ $runner_col -gt $((terminal_cols - 10)) ]] && runner_col=$((terminal_cols - 10))
+    local runner_col=$((5 + (TERM_COLS - 15) * distance_m / (total_distance * 1000)))
+    [[ $runner_col -gt $((TERM_COLS - 10)) ]] && runner_col=$((TERM_COLS - 10))
     draw_runner "$frame" 12 "$runner_col"
 
     # コース表示
     move_cursor 15 1
     echo -ne "${C_DIM}"
     echo -n "START "
-    for ((i = 0; i < terminal_cols - 15; i++)); do
+    for ((i = 0; i < TERM_COLS - 15; i++)); do
         if ((i % 10 == 0)); then
             echo -n "+"
         else
@@ -298,7 +250,7 @@ draw_marathon_screen() {
     move_cursor 16 1
     echo -ne "${C_DIM}"
     printf "%-6s" "0km"
-    local markers=$((terminal_cols - 15))
+    local markers=$((TERM_COLS - 15))
     for ((i = 1; i <= 4; i++)); do
         local pos=$((6 + markers * i / 4 - 3))
         move_cursor 16 "$pos"
@@ -312,9 +264,9 @@ draw_marathon_screen() {
     print_center "${C_YELLOW}${C_BOLD}📣 ${CHEER_MESSAGES[$msg_index]} 📣${C_RESET}" 18
 
     # ステータスバー
-    move_cursor "$terminal_rows" 1
+    move_cursor "$TERM_ROWS" 1
     echo -ne "${C_BG_BLUE}${C_WHITE}"
-    printf "%-${terminal_cols}s" "  [Space] 応援  [Q] 終了  [+/-] 速度調整"
+    printf "%-${TERM_COLS}s" "  [Space] 応援  [Q] 終了  [+/-] 速度調整"
     echo -ne "${C_RESET}"
 }
 
@@ -352,8 +304,8 @@ show_goal_celebration() {
         # 花火
         local colors=("${C_RED}" "${C_YELLOW}" "${C_GREEN}" "${C_CYAN}" "${C_MAGENTA}")
         for ((j = 0; j < 10; j++)); do
-            local row=$((RANDOM % (terminal_rows - 10) + 5))
-            local col=$((RANDOM % (terminal_cols - 5) + 3))
+            local row=$((RANDOM % (TERM_ROWS - 10) + 5))
+            local col=$((RANDOM % (TERM_COLS - 5) + 3))
             local color="${colors[$((RANDOM % ${#colors[@]}))]}"
             move_cursor "$row" "$col"
             echo -ne "${color}✦${C_RESET}"

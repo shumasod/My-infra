@@ -4,23 +4,29 @@ set -euo pipefail
 #
 # シェルスクリプトチャット - サーバー
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 1.1
 #
-# チャットルームを管理し、メッセージを配信します
+# 概要:
+#   チャットルームを管理し、メッセージを配信します
+#   ファイルベースでルーム管理を行い、複数クライアントの接続をサポート
 #
+# 使用例:
+#   ./chat_server.sh start             # generalルームを開始
+#   ./chat_server.sh start myroom      # myroomルームを開始
+#   ./chat_server.sh list              # アクティブなルーム一覧
+#   ./chat_server.sh stop myroom       # ルームを停止
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
+readonly VERSION="1.1"
 readonly DEFAULT_ROOM_DIR="/tmp/shell_chat"
 readonly MAX_MESSAGES=100
-
-# 色定義
-readonly COLOR_INFO='\033[1;36m'
-readonly COLOR_SUCCESS='\033[1;32m'
-readonly COLOR_WARNING='\033[1;33m'
-readonly COLOR_ERROR='\033[1;31m'
-readonly COLOR_RESET='\033[0m'
 
 # ===== グローバル変数 =====
 declare room_dir="${DEFAULT_ROOM_DIR}"
@@ -28,9 +34,12 @@ declare room_name="general"
 
 # ===== ヘルパー関数 =====
 
+#
+# 使用方法を表示
+#
 show_usage() {
     cat <<EOF
-${COLOR_INFO}シェルスクリプトチャット - サーバー${COLOR_RESET}
+${C_CYAN}シェルスクリプトチャット - サーバー${C_RESET}
 
 使用方法: $PROG_NAME [オプション] <コマンド>
 
@@ -53,26 +62,7 @@ ${COLOR_INFO}シェルスクリプトチャット - サーバー${COLOR_RESET}
 EOF
 }
 
-log_info() {
-    echo -e "${COLOR_INFO}[INFO]${COLOR_RESET} $1"
-}
-
-log_success() {
-    echo -e "${COLOR_SUCCESS}[SUCCESS]${COLOR_RESET} $1"
-}
-
-log_warning() {
-    echo -e "${COLOR_WARNING}[WARNING]${COLOR_RESET} $1"
-}
-
-log_error() {
-    echo -e "${COLOR_ERROR}[ERROR]${COLOR_RESET} $1" >&2
-}
-
-error_exit() {
-    log_error "$1"
-    exit 1
-}
+# log_info, log_success, log_warning, log_error, error_exit は共通ライブラリから提供
 
 # ===== ルーム管理関数 =====
 
@@ -96,7 +86,10 @@ init_room() {
     log_success "ルーム '${room}' を作成しました: ${room_path}"
 }
 
+#
 # ルームを開始
+# 引数: $1=ルーム名
+#
 start_room() {
     local room="$1"
     local room_path="${room_dir}/${room}"
@@ -112,9 +105,9 @@ start_room() {
     add_system_message "${room}" "チャットルーム '${room}' が開始されました"
 
     echo ""
-    echo -e "${COLOR_SUCCESS}=================================${COLOR_RESET}"
-    echo -e "${COLOR_SUCCESS}  チャットルーム開始${COLOR_RESET}"
-    echo -e "${COLOR_SUCCESS}=================================${COLOR_RESET}"
+    echo -e "${C_GREEN}=================================${C_RESET}"
+    echo -e "${C_GREEN}  チャットルーム開始${C_RESET}"
+    echo -e "${C_GREEN}=================================${C_RESET}"
     echo ""
     echo "ルーム名: ${room}"
     echo "パス: ${room_path}"
@@ -158,10 +151,12 @@ add_system_message() {
     } 200>"${room_path}/.lock"
 }
 
+#
 # アクティブなルーム一覧を表示
+#
 list_rooms() {
     echo ""
-    echo -e "${COLOR_INFO}=== アクティブなチャットルーム ===${COLOR_RESET}"
+    echo -e "${C_CYAN}=== アクティブなチャットルーム ===${C_RESET}"
     echo ""
 
     if [[ ! -d "${room_dir}" ]]; then
@@ -173,8 +168,8 @@ list_rooms() {
     for room_path in "${room_dir}"/*/; do
         if [[ -d "${room_path}" ]]; then
             found=true
-            local room_name
-            room_name=$(basename "${room_path}")
+            local current_room_name
+            current_room_name=$(basename "${room_path}")
             local user_count=0
             local msg_count=0
 
@@ -185,7 +180,7 @@ list_rooms() {
                 msg_count=$(wc -l < "${room_path}/messages.log" 2>/dev/null || echo "0")
             fi
 
-            echo -e "  ${COLOR_SUCCESS}●${COLOR_RESET} ${room_name}"
+            echo -e "  ${C_GREEN}●${C_RESET} ${current_room_name}"
             echo "    参加者: ${user_count} 人"
             echo "    メッセージ: ${msg_count} 件"
             echo ""

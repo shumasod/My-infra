@@ -4,25 +4,27 @@ set -euo pipefail
 #
 # シェルスクリプトチャット - グループマネージャー
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 1.1
 #
-# グループチャットの作成・管理を行います
+# 概要:
+#   グループチャットの作成・管理を行います
+#   グループの作成、削除、メンバー管理、パスワード設定などをサポート
 #
+# 使用例:
+#   ./group_manager.sh create "開発チーム" "開発者用チャット"
+#   ./group_manager.sh join "開発チーム"
+#   ./group_manager.sh invite "開発チーム" Alice
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
+readonly VERSION="1.1"
 readonly DEFAULT_CHAT_DIR="/tmp/shell_chat"
-
-# 色定義
-readonly C_RESET='\033[0m'
-readonly C_BOLD='\033[1m'
-readonly C_RED='\033[1;31m'
-readonly C_GREEN='\033[1;32m'
-readonly C_YELLOW='\033[1;33m'
-readonly C_BLUE='\033[1;34m'
-readonly C_CYAN='\033[1;36m'
-readonly C_DIM='\033[2m'
 
 # ===== グローバル変数 =====
 declare chat_dir="${DEFAULT_CHAT_DIR}"
@@ -30,6 +32,9 @@ declare current_user="${USER:-anonymous}"
 
 # ===== ヘルパー関数 =====
 
+#
+# 使用方法を表示
+#
 show_usage() {
     cat <<EOF
 ${C_CYAN}シェルスクリプトチャット - グループマネージャー${C_RESET}
@@ -66,26 +71,7 @@ ${C_YELLOW}例:${C_RESET}
 EOF
 }
 
-log_info() {
-    echo -e "${C_CYAN}[INFO]${C_RESET} $1"
-}
-
-log_success() {
-    echo -e "${C_GREEN}[SUCCESS]${C_RESET} $1"
-}
-
-log_warning() {
-    echo -e "${C_YELLOW}[WARNING]${C_RESET} $1"
-}
-
-log_error() {
-    echo -e "${C_RED}[ERROR]${C_RESET} $1" >&2
-}
-
-error_exit() {
-    log_error "$1"
-    exit 1
-}
+# log_info, log_success, log_warning, log_error, error_exit は共通ライブラリから提供
 
 # グループディレクトリのパスを取得
 get_group_path() {

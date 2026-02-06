@@ -4,23 +4,26 @@ set -euo pipefail
 #
 # 飲食店紹介ページ生成スクリプト
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 1.1
 #
-# 一般的な個人飲食店向けのホームページを生成します
-# 店名、住所、電話番号などをカスタマイズ可能
+# 概要:
+#   一般的な個人飲食店向けのホームページ（HTML/CSS）を生成します
+#   店名、住所、電話番号などをコマンドラインオプションでカスタマイズ可能
 #
+# 使用例:
+#   ./generate_site.sh
+#   ./generate_site.sh -n "居酒屋 たろう" -p "03-9999-8888"
+#
+
+# ===== 共通ライブラリ読み込み =====
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
+readonly VERSION="1.1"
 readonly DEFAULT_OUTPUT_DIR="./output"
-
-# 色定義
-readonly COLOR_TITLE='\033[1;36m'
-readonly COLOR_SUCCESS='\033[1;32m'
-readonly COLOR_ERROR='\033[1;31m'
-readonly COLOR_INFO='\033[1;33m'
-readonly COLOR_RESET='\033[0m'
 
 # ===== グローバル変数（店舗情報のデフォルト値） =====
 declare shop_name="小料理屋 和心"
@@ -38,17 +41,20 @@ declare output_dir="${DEFAULT_OUTPUT_DIR}"
 
 # ===== ヘルパー関数 =====
 
+#
+# 使用方法を表示
+#
 show_usage() {
     cat <<EOF
-${COLOR_TITLE}使用方法:${COLOR_RESET} $PROG_NAME [オプション]
+${C_CYAN}使用方法:${C_RESET} $PROG_NAME [オプション]
 
 飲食店紹介ページ（HTML/CSS）を生成します。
 
-${COLOR_TITLE}オプション:${COLOR_RESET}
+${C_CYAN}オプション:${C_RESET}
   -h, --help              このヘルプを表示
   -v, --version           バージョン情報を表示
   -o, --output <dir>      出力ディレクトリ（デフォルト: ${DEFAULT_OUTPUT_DIR}）
-  -n, --name <name>       店名（デフォルト: ${shop_name}）
+  -n, --name <name>       店名
   -r, --reading <reading> 店名の読み仮名
   -t, --tagline <text>    キャッチコピー
   -a, --address <address> 住所
@@ -59,7 +65,7 @@ ${COLOR_TITLE}オプション:${COLOR_RESET}
   --closed <day>          定休日
   --seats <number>        席数
 
-${COLOR_TITLE}例:${COLOR_RESET}
+${C_CYAN}例:${C_RESET}
   $PROG_NAME
   $PROG_NAME -n "居酒屋 たろう" -p "03-9999-8888"
   $PROG_NAME -o ./mysite --name "寿司処 まさ" --seats "カウンター10席、テーブル4席×2"
@@ -67,22 +73,21 @@ ${COLOR_TITLE}例:${COLOR_RESET}
 EOF
 }
 
+#
+# バージョン情報を表示
+#
 show_version() {
     echo "$PROG_NAME version $VERSION"
 }
 
-error_exit() {
-    echo -e "${COLOR_ERROR}エラー: $1${COLOR_RESET}" >&2
+#
+# エラー終了（共通ライブラリを使用）
+# 引数: $1=エラーメッセージ
+#
+show_error_and_exit() {
+    log_error "$1"
     echo "詳しい使用方法は「$PROG_NAME --help」を参照してください" >&2
     exit 1
-}
-
-info() {
-    echo -e "${COLOR_INFO}[INFO]${COLOR_RESET} $1"
-}
-
-success() {
-    echo -e "${COLOR_SUCCESS}[SUCCESS]${COLOR_RESET} $1"
 }
 
 # ===== HTML生成関数 =====
@@ -1259,65 +1264,65 @@ parse_arguments() {
                 exit 0
                 ;;
             -o|--output)
-                [[ $# -lt 2 ]] && error_exit "--output には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--output には値が必要です"
                 output_dir="$2"
                 shift 2
                 ;;
             -n|--name)
-                [[ $# -lt 2 ]] && error_exit "--name には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--name には値が必要です"
                 shop_name="$2"
                 shift 2
                 ;;
             -r|--reading)
-                [[ $# -lt 2 ]] && error_exit "--reading には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--reading には値が必要です"
                 shop_name_reading="$2"
                 shift 2
                 ;;
             -t|--tagline)
-                [[ $# -lt 2 ]] && error_exit "--tagline には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--tagline には値が必要です"
                 shop_tagline="$2"
                 shift 2
                 ;;
             -a|--address)
-                [[ $# -lt 2 ]] && error_exit "--address には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--address には値が必要です"
                 shop_address="$2"
                 shift 2
                 ;;
             -p|--phone)
-                [[ $# -lt 2 ]] && error_exit "--phone には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--phone には値が必要です"
                 shop_tel="$2"
                 shift 2
                 ;;
             --owner)
-                [[ $# -lt 2 ]] && error_exit "--owner には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--owner には値が必要です"
                 shop_owner="$2"
                 shift 2
                 ;;
             --lunch)
-                [[ $# -lt 2 ]] && error_exit "--lunch には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--lunch には値が必要です"
                 lunch_hours="$2"
                 shift 2
                 ;;
             --dinner)
-                [[ $# -lt 2 ]] && error_exit "--dinner には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--dinner には値が必要です"
                 dinner_hours="$2"
                 shift 2
                 ;;
             --closed)
-                [[ $# -lt 2 ]] && error_exit "--closed には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--closed には値が必要です"
                 closed_day="$2"
                 shift 2
                 ;;
             --seats)
-                [[ $# -lt 2 ]] && error_exit "--seats には値が必要です"
+                [[ $# -lt 2 ]] && show_error_and_exit "--seats には値が必要です"
                 seats="$2"
                 shift 2
                 ;;
             -*)
-                error_exit "不明なオプション: $1"
+                show_error_and_exit "不明なオプション: $1"
                 ;;
             *)
-                error_exit "不明な引数: $1"
+                show_error_and_exit "不明な引数: $1"
                 ;;
         esac
     done
@@ -1325,34 +1330,29 @@ parse_arguments() {
 
 # ===== メイン処理 =====
 
-main() {
-    parse_arguments "$@"
-
-    echo -e "${COLOR_TITLE}"
+#
+# バナーを表示
+#
+show_banner() {
+    echo -e "${C_CYAN}"
     echo "=================================="
     echo "  飲食店紹介ページ生成スクリプト"
     echo "  Version ${VERSION}"
     echo "=================================="
-    echo -e "${COLOR_RESET}"
+    echo -e "${C_RESET}"
+}
 
-    # 出力ディレクトリ作成
-    info "出力ディレクトリを作成: ${output_dir}"
-    mkdir -p "${output_dir}"
-
-    # HTML生成
-    local html_file="${output_dir}/index.html"
-    info "HTMLファイルを生成: ${html_file}"
-    generate_html "${html_file}"
-
-    # CSS生成
-    local css_file="${output_dir}/style.css"
-    info "CSSファイルを生成: ${css_file}"
-    generate_css "${css_file}"
+#
+# 結果を表示
+#
+show_result() {
+    local html_file="$1"
+    local css_file="$2"
 
     echo ""
-    echo -e "${COLOR_SUCCESS}========================================${COLOR_RESET}"
-    success "ページ生成が完了しました！"
-    echo -e "${COLOR_SUCCESS}========================================${COLOR_RESET}"
+    echo -e "${C_GREEN}========================================${C_RESET}"
+    log_success "ページ生成が完了しました！"
+    echo -e "${C_GREEN}========================================${C_RESET}"
     echo ""
     echo "生成されたファイル:"
     echo "  - ${html_file}"
@@ -1364,6 +1364,31 @@ main() {
     echo "  電話: ${shop_tel}"
     echo ""
     echo "ブラウザで ${html_file} を開いて確認してください。"
+}
+
+#
+# メイン処理
+#
+main() {
+    parse_arguments "$@"
+
+    show_banner
+
+    # 出力ディレクトリ作成
+    log_info "出力ディレクトリを作成: ${output_dir}"
+    mkdir -p "${output_dir}"
+
+    # HTML生成
+    local html_file="${output_dir}/index.html"
+    log_info "HTMLファイルを生成: ${html_file}"
+    generate_html "${html_file}"
+
+    # CSS生成
+    local css_file="${output_dir}/style.css"
+    log_info "CSSファイルを生成: ${css_file}"
+    generate_css "${css_file}"
+
+    show_result "${html_file}" "${css_file}"
 
     exit 0
 }

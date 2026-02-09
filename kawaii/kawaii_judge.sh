@@ -4,16 +4,19 @@ set -euo pipefail
 #
 # 最上級かわいい判定スクリプト
 # 作成日: 2024
-# バージョン: 1.0
+# バージョン: 2.0
 #
 # 概要:
 #   入力された対象が「最上級にかわいい」かどうかを判定します
 #   独自のかわいさアルゴリズムで厳正に審査します
+#   子猫モード・子犬モードでかわいさを体験できます
 #
 # 使用例:
 #   ./kawaii_judge.sh                    # インタラクティブモード
 #   ./kawaii_judge.sh "猫"               # 対象を指定
 #   ./kawaii_judge.sh --strict "子犬"    # 厳格モード
+#   ./kawaii_judge.sh --kitten           # 子猫モード
+#   ./kawaii_judge.sh --puppy            # 子犬モード
 #
 
 # ===== 共通ライブラリ読み込み =====
@@ -36,7 +39,7 @@ fi
 
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
-readonly VERSION="1.0"
+readonly VERSION="2.0"
 
 # かわいさレベル定義
 readonly -a KAWAII_LEVELS=(
@@ -90,10 +93,66 @@ readonly -a KAOMOJI=(
     "(≧◡≦)"
 )
 
+# 子猫の鳴き声
+readonly -a KITTEN_SOUNDS=(
+    "にゃー♪"
+    "にゃん♡"
+    "みゃー"
+    "にゃ〜ん"
+    "ふにゃ〜"
+    "みぃ..."
+    "にゃにゃ！"
+    "ごろごろ..."
+    "ぷるるる"
+)
+
+# 子犬の鳴き声
+readonly -a PUPPY_SOUNDS=(
+    "わん！"
+    "きゅーん♡"
+    "わんわん♪"
+    "くぅーん"
+    "あうあう"
+    "ばう！"
+    "きゃんきゃん"
+    "くんくん"
+    "わふっ"
+)
+
+# 子猫のアクション
+readonly -a KITTEN_ACTIONS=(
+    "毛づくろいをしている"
+    "丸くなって寝ている"
+    "じゃれついてきた"
+    "ゴロゴロ言っている"
+    "あくびをした"
+    "しっぽをふりふりしている"
+    "前足でふみふみしている"
+    "箱に入ろうとしている"
+    "高いところに登ろうとしている"
+    "おもちゃに飛びかかった"
+)
+
+# 子犬のアクション
+readonly -a PUPPY_ACTIONS=(
+    "しっぽをぶんぶん振っている"
+    "お腹を見せてゴロン"
+    "ボールを追いかけている"
+    "甘えてすり寄ってきた"
+    "おすわりしている"
+    "お手をしようとしている"
+    "くるくる回っている"
+    "舌を出してハァハァしている"
+    "首をかしげている"
+    "飼い主を見つめている"
+)
+
 # ===== グローバル変数 =====
 declare target=""
 declare -i strict_mode=0
 declare -i debug_mode=0
+declare -i kitten_mode=0
+declare -i puppy_mode=0
 
 # ===== ヘルパー関数 =====
 
@@ -115,12 +174,16 @@ ${C_MAGENTA}✨ 最上級かわいい判定スクリプト ✨${C_RESET} v${VERS
   -v, --version   バージョン情報を表示
   -s, --strict    厳格モード（判定が厳しくなります）
   -d, --debug     デバッグモード（スコア詳細を表示）
+  --kitten        子猫モード 🐱
+  --puppy         子犬モード 🐶
 
 例:
   $PROG_NAME                    # インタラクティブモード
   $PROG_NAME "子猫"             # 子猫のかわいさを判定
   $PROG_NAME --strict "柴犬"    # 厳格モードで判定
   $PROG_NAME "推しの写真"       # 最上級確定
+  $PROG_NAME --kitten           # 子猫とふれあう
+  $PROG_NAME --puppy            # 子犬とふれあう
 
 ${C_YELLOW}注意:${C_RESET}
   このスクリプトの判定結果は絶対です。
@@ -394,6 +457,352 @@ show_celebration() {
     echo -e "${C_YELLOW}✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨✨${C_RESET}"
 }
 
+# ===== 子猫・子犬モード =====
+
+#
+# 子猫のASCIIアートを表示
+#
+draw_kitten() {
+    local frame=$1
+    local mood="${2:-normal}"
+
+    case $((frame % 4)) in
+        0)
+            if [[ "$mood" == "happy" ]]; then
+                echo -e "${C_YELLOW}"
+                cat <<'KITTEN'
+    /\_/\
+   ( ^.^ ) ～♪
+    > ^ <
+   /|   |\
+  (_|   |_)
+KITTEN
+            elif [[ "$mood" == "sleepy" ]]; then
+                echo -e "${C_CYAN}"
+                cat <<'KITTEN'
+    /\_/\
+   ( -.- ) zzZ
+    > ^ <
+   /|   |\
+  (_|   |_)
+KITTEN
+            else
+                echo -e "${C_WHITE}"
+                cat <<'KITTEN'
+    /\_/\
+   ( o.o )
+    > ^ <
+   /|   |\
+  (_|   |_)
+KITTEN
+            fi
+            ;;
+        1)
+            echo -e "${C_WHITE}"
+            cat <<'KITTEN'
+    /\_/\
+   ( o.o ) ?
+    > ^ <
+   /|  |\
+  (_| |_)
+KITTEN
+            ;;
+        2)
+            echo -e "${C_YELLOW}"
+            cat <<'KITTEN'
+    /\_/\  ～
+   ( ^.^ )
+    > ^ <
+   /|   |\
+  (_|   |_)
+KITTEN
+            ;;
+        3)
+            echo -e "${C_WHITE}"
+            cat <<'KITTEN'
+    /\_/\
+   ( o.o )
+    > ^ <
+    /| |\
+   (_| |_)
+KITTEN
+            ;;
+    esac
+    echo -e "${C_RESET}"
+}
+
+#
+# 子犬のASCIIアートを表示
+#
+draw_puppy() {
+    local frame=$1
+    local mood="${2:-normal}"
+
+    case $((frame % 4)) in
+        0)
+            if [[ "$mood" == "happy" ]]; then
+                echo -e "${C_YELLOW}"
+                cat <<'PUPPY'
+    / \__
+   (    @\___
+   /         O
+  /   (_____/
+ /_____/  U U  ～♪
+PUPPY
+            elif [[ "$mood" == "sleepy" ]]; then
+                echo -e "${C_CYAN}"
+                cat <<'PUPPY'
+    / \__
+   (    -\___
+   /         O  zzZ
+  /   (_____/
+ /_____/  U U
+PUPPY
+            else
+                echo -e "${C_WHITE}"
+                cat <<'PUPPY'
+    / \__
+   (    @\___
+   /         O
+  /   (_____/
+ /_____/  U U
+PUPPY
+            fi
+            ;;
+        1)
+            echo -e "${C_WHITE}"
+            cat <<'PUPPY'
+    / \__
+   (    @\___  ?
+   /         O
+  /   (_____/
+ /_____/  U U
+PUPPY
+            ;;
+        2)
+            echo -e "${C_YELLOW}"
+            cat <<'PUPPY'
+     / \__
+    (    @\___
+    /         O
+   /   (_____/
+  /_____/ U  U ～
+PUPPY
+            ;;
+        3)
+            echo -e "${C_WHITE}"
+            cat <<'PUPPY'
+   / \__
+  (    @\___
+  /         O
+ /   (_____/
+/_____/  U U
+PUPPY
+            ;;
+    esac
+    echo -e "${C_RESET}"
+}
+
+#
+# 子猫モードのメイン処理
+#
+run_kitten_mode() {
+    echo ""
+    echo -e "${C_MAGENTA}╔════════════════════════════════════════════════════╗${C_RESET}"
+    echo -e "${C_MAGENTA}║${C_RESET}  ${C_YELLOW}🐱${C_RESET} ${C_WHITE}${C_BOLD}子猫モード - にゃんにゃんタイム${C_RESET} ${C_YELLOW}🐱${C_RESET}          ${C_MAGENTA}║${C_RESET}"
+    echo -e "${C_MAGENTA}╚════════════════════════════════════════════════════╝${C_RESET}"
+    echo ""
+
+    local kitten_name
+    echo -e "${C_CYAN}子猫の名前を入力してください:${C_RESET}"
+    echo -ne "${C_WHITE}> ${C_RESET}"
+    read -r kitten_name
+    [[ -z "$kitten_name" ]] && kitten_name="にゃんこ"
+
+    echo ""
+    echo -e "${C_GREEN}${kitten_name}があらわれた！${C_RESET}"
+    echo ""
+
+    draw_kitten 0 "normal"
+
+    local running=true
+    while $running; do
+        echo ""
+        echo -e "${C_CYAN}┌─────────────────────────────────────┐${C_RESET}"
+        echo -e "${C_CYAN}│${C_RESET} 1) なでなでする  2) 遊ぶ            ${C_CYAN}│${C_RESET}"
+        echo -e "${C_CYAN}│${C_RESET} 3) おやつをあげる  4) 様子を見る    ${C_CYAN}│${C_RESET}"
+        echo -e "${C_CYAN}│${C_RESET} q) 終了                             ${C_CYAN}│${C_RESET}"
+        echo -e "${C_CYAN}└─────────────────────────────────────┘${C_RESET}"
+        echo -ne "${C_WHITE}選択: ${C_RESET}"
+        read -r choice
+
+        case "$choice" in
+            1)
+                echo ""
+                echo -e "${C_YELLOW}*なでなで*${C_RESET}"
+                sleep 0.3
+                draw_kitten 2 "happy"
+                local sound="${KITTEN_SOUNDS[$((RANDOM % ${#KITTEN_SOUNDS[@]}))]}"
+                echo -e "${C_GREEN}${kitten_name}:${C_RESET} ${C_MAGENTA}「${sound}」${C_RESET}"
+                echo -e "${C_YELLOW}${kitten_name}は気持ちよさそうにしている...${C_RESET}"
+                ;;
+            2)
+                echo ""
+                echo -e "${C_YELLOW}*おもちゃをふりふり*${C_RESET}"
+                for i in 1 2 3; do
+                    sleep 0.3
+                    draw_kitten $i "normal"
+                done
+                local sound="${KITTEN_SOUNDS[$((RANDOM % ${#KITTEN_SOUNDS[@]}))]}"
+                echo -e "${C_GREEN}${kitten_name}:${C_RESET} ${C_MAGENTA}「${sound}」${C_RESET}"
+                local action="${KITTEN_ACTIONS[$((RANDOM % ${#KITTEN_ACTIONS[@]}))]}"
+                echo -e "${C_YELLOW}${kitten_name}は${action}！${C_RESET}"
+                ;;
+            3)
+                echo ""
+                echo -e "${C_YELLOW}*おやつをあげた*${C_RESET}"
+                sleep 0.3
+                draw_kitten 0 "happy"
+                echo -e "${C_GREEN}${kitten_name}:${C_RESET} ${C_MAGENTA}「にゃー♪♪」${C_RESET}"
+                echo -e "${C_YELLOW}${kitten_name}はおいしそうに食べている...${C_RESET}"
+                echo -e "${C_MAGENTA}✨ かわいさが上昇した！ ✨${C_RESET}"
+                ;;
+            4)
+                echo ""
+                local action="${KITTEN_ACTIONS[$((RANDOM % ${#KITTEN_ACTIONS[@]}))]}"
+                local mood_roll=$((RANDOM % 3))
+                local mood="normal"
+                [[ $mood_roll -eq 0 ]] && mood="happy"
+                [[ $mood_roll -eq 1 ]] && mood="sleepy"
+                draw_kitten $((RANDOM % 4)) "$mood"
+                echo -e "${C_YELLOW}${kitten_name}は${action}${C_RESET}"
+                ;;
+            q|Q)
+                echo ""
+                draw_kitten 0 "sleepy"
+                echo -e "${C_CYAN}${kitten_name}:${C_RESET} ${C_MAGENTA}「にゃ〜ん...」${C_RESET}"
+                echo -e "${C_YELLOW}${kitten_name}はあなたを見送っている...${C_RESET}"
+                echo ""
+                echo -e "${C_MAGENTA}またね、${kitten_name}！ ${C_RESET}$(get_random_kaomoji)"
+                running=false
+                ;;
+            *)
+                echo -e "${C_RED}にゃ？${C_RESET}"
+                ;;
+        esac
+    done
+}
+
+#
+# 子犬モードのメイン処理
+#
+run_puppy_mode() {
+    echo ""
+    echo -e "${C_MAGENTA}╔════════════════════════════════════════════════════╗${C_RESET}"
+    echo -e "${C_MAGENTA}║${C_RESET}  ${C_YELLOW}🐶${C_RESET} ${C_WHITE}${C_BOLD}子犬モード - わんわんタイム${C_RESET} ${C_YELLOW}🐶${C_RESET}            ${C_MAGENTA}║${C_RESET}"
+    echo -e "${C_MAGENTA}╚════════════════════════════════════════════════════╝${C_RESET}"
+    echo ""
+
+    local puppy_name
+    echo -e "${C_CYAN}子犬の名前を入力してください:${C_RESET}"
+    echo -ne "${C_WHITE}> ${C_RESET}"
+    read -r puppy_name
+    [[ -z "$puppy_name" ]] && puppy_name="わんこ"
+
+    echo ""
+    echo -e "${C_GREEN}${puppy_name}があらわれた！${C_RESET}"
+    echo ""
+
+    draw_puppy 0 "happy"
+    echo -e "${C_GREEN}${puppy_name}:${C_RESET} ${C_MAGENTA}「わんわん！」${C_RESET}"
+    echo -e "${C_YELLOW}しっぽをぶんぶん振っている！${C_RESET}"
+
+    local running=true
+    while $running; do
+        echo ""
+        echo -e "${C_CYAN}┌─────────────────────────────────────┐${C_RESET}"
+        echo -e "${C_CYAN}│${C_RESET} 1) なでなでする  2) ボールで遊ぶ    ${C_CYAN}│${C_RESET}"
+        echo -e "${C_CYAN}│${C_RESET} 3) おやつをあげる  4) 様子を見る    ${C_CYAN}│${C_RESET}"
+        echo -e "${C_CYAN}│${C_RESET} 5) お手！  q) 終了                  ${C_CYAN}│${C_RESET}"
+        echo -e "${C_CYAN}└─────────────────────────────────────┘${C_RESET}"
+        echo -ne "${C_WHITE}選択: ${C_RESET}"
+        read -r choice
+
+        case "$choice" in
+            1)
+                echo ""
+                echo -e "${C_YELLOW}*なでなで*${C_RESET}"
+                sleep 0.3
+                draw_puppy 2 "happy"
+                local sound="${PUPPY_SOUNDS[$((RANDOM % ${#PUPPY_SOUNDS[@]}))]}"
+                echo -e "${C_GREEN}${puppy_name}:${C_RESET} ${C_MAGENTA}「${sound}」${C_RESET}"
+                echo -e "${C_YELLOW}${puppy_name}は嬉しそうにしっぽを振っている！${C_RESET}"
+                ;;
+            2)
+                echo ""
+                echo -e "${C_YELLOW}*ボールを投げた！*${C_RESET}"
+                for i in 1 2 3 0; do
+                    sleep 0.2
+                    draw_puppy $i "normal"
+                done
+                local sound="${PUPPY_SOUNDS[$((RANDOM % ${#PUPPY_SOUNDS[@]}))]}"
+                echo -e "${C_GREEN}${puppy_name}:${C_RESET} ${C_MAGENTA}「${sound}」${C_RESET}"
+                echo -e "${C_YELLOW}${puppy_name}はボールをくわえて戻ってきた！${C_RESET}"
+                echo -e "${C_MAGENTA}✨ 楽しそう！ ✨${C_RESET}"
+                ;;
+            3)
+                echo ""
+                echo -e "${C_YELLOW}*おやつをあげた*${C_RESET}"
+                sleep 0.3
+                draw_puppy 0 "happy"
+                echo -e "${C_GREEN}${puppy_name}:${C_RESET} ${C_MAGENTA}「わんわん♪♪」${C_RESET}"
+                echo -e "${C_YELLOW}${puppy_name}はおいしそうに食べている...${C_RESET}"
+                echo -e "${C_YELLOW}しっぽが千切れそうなほど振っている！${C_RESET}"
+                echo -e "${C_MAGENTA}✨ かわいさが上昇した！ ✨${C_RESET}"
+                ;;
+            4)
+                echo ""
+                local action="${PUPPY_ACTIONS[$((RANDOM % ${#PUPPY_ACTIONS[@]}))]}"
+                local mood_roll=$((RANDOM % 3))
+                local mood="normal"
+                [[ $mood_roll -eq 0 ]] && mood="happy"
+                [[ $mood_roll -eq 1 ]] && mood="sleepy"
+                draw_puppy $((RANDOM % 4)) "$mood"
+                echo -e "${C_YELLOW}${puppy_name}は${action}${C_RESET}"
+                ;;
+            5)
+                echo ""
+                echo -e "${C_YELLOW}「${puppy_name}、お手！」${C_RESET}"
+                sleep 0.5
+                local success=$((RANDOM % 3))
+                if [[ $success -ne 0 ]]; then
+                    draw_puppy 0 "happy"
+                    echo -e "${C_GREEN}${puppy_name}:${C_RESET} ${C_MAGENTA}「わん！」${C_RESET}"
+                    echo -e "${C_YELLOW}${puppy_name}はお手をした！${C_RESET}"
+                    echo -e "${C_MAGENTA}✨ おりこうさん！ ✨${C_RESET}"
+                else
+                    draw_puppy 1 "normal"
+                    echo -e "${C_GREEN}${puppy_name}:${C_RESET} ${C_MAGENTA}「？」${C_RESET}"
+                    echo -e "${C_YELLOW}${puppy_name}は首をかしげている...${C_RESET}"
+                    echo -e "${C_CYAN}（それもかわいい）${C_RESET}"
+                fi
+                ;;
+            q|Q)
+                echo ""
+                draw_puppy 0 "sleepy"
+                echo -e "${C_CYAN}${puppy_name}:${C_RESET} ${C_MAGENTA}「くぅーん...」${C_RESET}"
+                echo -e "${C_YELLOW}${puppy_name}はさみしそうにあなたを見つめている...${C_RESET}"
+                echo ""
+                echo -e "${C_MAGENTA}またね、${puppy_name}！ ${C_RESET}$(get_random_kaomoji)"
+                running=false
+                ;;
+            *)
+                echo -e "${C_RED}わん？${C_RESET}"
+                ;;
+        esac
+    done
+}
+
 # ===== メイン処理 =====
 
 #
@@ -497,6 +906,14 @@ parse_arguments() {
                 debug_mode=1
                 shift
                 ;;
+            --kitten|--cat|--neko)
+                kitten_mode=1
+                shift
+                ;;
+            --puppy|--dog|--inu)
+                puppy_mode=1
+                shift
+                ;;
             -*)
                 echo -e "${C_RED}不明なオプション: $1${C_RESET}" >&2
                 exit 1
@@ -515,6 +932,19 @@ parse_arguments() {
 main() {
     parse_arguments "$@"
 
+    # 子猫モード
+    if [[ $kitten_mode -eq 1 ]]; then
+        run_kitten_mode
+        exit 0
+    fi
+
+    # 子犬モード
+    if [[ $puppy_mode -eq 1 ]]; then
+        run_puppy_mode
+        exit 0
+    fi
+
+    # 通常の判定モード
     if [[ -z "$target" ]]; then
         interactive_mode
     else

@@ -1,35 +1,53 @@
 #!/bin/bash
+set -euo pipefail
 
-# MariaDB接続情報
-DB_HOST="localhost"
-DB_PORT="3306"
-DB_USER="your_username"
-DB_PASS="your_password"
-DB_NAME="your_database"
+#
+# MariaDB コネクション監視・リカバリスクリプト
+# セキュリティ修正: 2026-01-31
+#
+# 環境変数から認証情報を読み込みます:
+#   DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME
+#   SQL_FILE_PATH, NEW_SQL_FILE_PATH (オプション)
+#
 
-# 欠損したSQLファイルのパス
-SQL_FILE_PATH="/path/to/missing_file.sql"
-# 新しいSQLファイルのパス
-NEW_SQL_FILE_PATH="/path/to/new_file.sql"
+# デフォルト値
+: "${DB_HOST:=localhost}"
+: "${DB_PORT:=3306}"
+: "${SQL_FILE_PATH:=/path/to/missing_file.sql}"
+: "${NEW_SQL_FILE_PATH:=/path/to/new_file.sql}"
+: "${LOG_FILE:=/var/log/db_connection_monitor.log}"
+: "${MAX_CONNECTION_THRESHOLD:=80}"
 
-# ログファイル
-LOG_FILE="/var/log/db_connection_monitor.log"
+# 必須環境変数のチェック
+check_required_env() {
+    local missing=()
+    [[ -z "${DB_USER:-}" ]] && missing+=("DB_USER")
+    [[ -z "${DB_PASS:-}" ]] && missing+=("DB_PASS")
+    [[ -z "${DB_NAME:-}" ]] && missing+=("DB_NAME")
 
-# 最大コネクション数の閾値（デフォルト接続数の80%を警告として設定）
-MAX_CONNECTION_THRESHOLD=80
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "[ERROR] 以下の環境変数が設定されていません: ${missing[*]}" >&2
+        exit 1
+    fi
+}
 
 # ログ出力関数
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
+# MySQL実行ヘルパー（パスワードをプロセスリストに表示しない）
+mysql_exec() {
+    MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$@"
+}
+
 # コネクション数をチェックする関数
 check_connection_count() {
-    local result=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" \
-        -se "SHOW STATUS LIKE 'Threads_connected';" 2>/dev/null | awk '{print $2}')
-    
-    local max_connections=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" \
-        -se "SHOW VARIABLES LIKE 'max_connections';" 2>/dev/null | awk '{print $2}')
+    local result
+    result=$(mysql_exec -se "SHOW STATUS LIKE 'Threads_connected';" 2>/dev/null | awk '{print $2}')
+
+    local max_connections
+    max_connections=$(mysql_exec -se "SHOW VARIABLES LIKE 'max_connections';" 2>/dev/null | awk '{print $2}')
     
     if [ -z "$result" ] || [ -z "$max_connections" ]; then
         log_message "ERROR: コネクション情報の取得に失敗しました"
@@ -48,32 +66,44 @@ check_connection_count() {
     return 0
 }
 
+# コネクションIDのバリデーション（SQLインジェクション対策）
+validate_connection_id() {
+    local conn_id="$1"
+    if [[ ! "$conn_id" =~ ^[0-9]+$ ]]; then
+        log_message "WARNING: 不正なコネクションID: $conn_id"
+        return 1
+    fi
+    return 0
+}
+
 # アイドルコネクションをキルする関数
 kill_idle_connections() {
     log_message "INFO: アイドルコネクションのクリーンアップを開始します"
-    
+
     # 60秒以上アイドル状態のコネクションを取得してキル
-    local idle_connections=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" \
-        -se "SELECT ID FROM information_schema.PROCESSLIST 
-             WHERE Command = 'Sleep' 
-             AND Time > 60 
+    local idle_connections
+    idle_connections=$(mysql_exec -se "SELECT ID FROM information_schema.PROCESSLIST
+             WHERE Command = 'Sleep'
+             AND Time > 60
              AND USER != 'system user';" 2>/dev/null)
-    
-    if [ -z "$idle_connections" ]; then
+
+    if [[ -z "$idle_connections" ]]; then
         log_message "INFO: キル対象のアイドルコネクションはありません"
         return 0
     fi
-    
+
     local kill_count=0
     for conn_id in $idle_connections; do
-        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" \
-            -e "KILL $conn_id;" 2>/dev/null
-        if [ $? -eq 0 ]; then
+        # コネクションIDのバリデーション
+        if ! validate_connection_id "$conn_id"; then
+            continue
+        fi
+        if mysql_exec -e "KILL $conn_id;" 2>/dev/null; then
             ((kill_count++))
             log_message "INFO: コネクションID $conn_id をキルしました"
         fi
     done
-    
+
     log_message "INFO: ${kill_count}個のアイドルコネクションをキルしました"
 }
 
@@ -97,8 +127,8 @@ execute_sql_with_retry() {
         
         # SQL実行
         log_message "INFO: SQLファイルを実行します（試行: $((retry_count + 1))/$max_retries）"
-        
-        mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" < "$sql_file" 2>&1 | tee -a "$LOG_FILE"
+
+        mysql_exec < "$sql_file" 2>&1 | tee -a "$LOG_FILE"
         local exit_code=${PIPESTATUS[0]}
         
         if [ $exit_code -eq 0 ]; then
@@ -152,8 +182,11 @@ EOF
 
 # メイン処理
 main() {
+    # 必須環境変数のチェック
+    check_required_env
+
     log_message "========== スクリプト開始 =========="
-    
+
     # 初期コネクション状態チェック
     check_connection_count
     
@@ -187,4 +220,4 @@ main() {
 }
 
 # スクリプト実行
-main
+main "$@"

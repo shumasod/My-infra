@@ -27,20 +27,23 @@ log() {
 }
 
 # テスト関数
+# 注意: test_commandは信頼されたソースからのみ受け取ること
 test_function() {
     local test_name="$1"
     local test_command="$2"
     local expected_result="$3"  # 0=成功期待, 1=失敗期待
-    
+
     ((TESTS_TOTAL++))
     log "テスト実行: $test_name"
-    
-    if eval "$test_command" &>/dev/null; then
-        local result=0
+
+    local result
+    # evalの代わりにbash -cを使用（より明示的で安全）
+    if bash -c "$test_command" &>/dev/null; then
+        result=0
     else
-        local result=1
+        result=1
     fi
-    
+
     if [[ $result -eq $expected_result ]]; then
         ((TESTS_PASSED++))
         log "  ✓ PASSED: $test_name"

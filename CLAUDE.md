@@ -1,7 +1,7 @@
 # CLAUDE.md - AI Assistant Guide for My-infra Repository
 
-**Last Updated:** 2025-12-02
-**Version:** 1.0.0
+**Last Updated:** 2026-02-13
+**Version:** 2.0.0
 **Repository:** My-infra - Infrastructure Automation & System Administration Toolkit
 
 ---
@@ -11,14 +11,16 @@
 1. [Repository Overview](#repository-overview)
 2. [Project Structure](#project-structure)
 3. [Technology Stack](#technology-stack)
-4. [Coding Conventions](#coding-conventions)
-5. [Development Workflows](#development-workflows)
-6. [Git Practices](#git-practices)
-7. [File Organization](#file-organization)
-8. [Common Patterns](#common-patterns)
-9. [Testing Guidelines](#testing-guidelines)
-10. [Documentation Standards](#documentation-standards)
-11. [AI Assistant Guidelines](#ai-assistant-guidelines)
+4. [Shared Library (lib/common.sh)](#shared-library-libcommonsh)
+5. [Coding Conventions](#coding-conventions)
+6. [Development Workflows](#development-workflows)
+7. [CI/CD Pipeline](#cicd-pipeline)
+8. [Git Practices](#git-practices)
+9. [File Organization](#file-organization)
+10. [Common Patterns](#common-patterns)
+11. [Testing Guidelines](#testing-guidelines)
+12. [Documentation Standards](#documentation-standards)
+13. [AI Assistant Guidelines](#ai-assistant-guidelines)
 
 ---
 
@@ -33,21 +35,25 @@ My-infra is a comprehensive **Shell Script Collection for Infrastructure & Busin
 - System administration tasks
 - Windows PC provisioning (kitting)
 - Network management and monitoring
+- Interactive TUI (Text User Interface) applications
+- Entertainment and educational shell-based tools
 
 ### Key Characteristics
-- **Primary Language:** Bash/Shell scripts (172 files, 54% of codebase)
-- **Version:** 1.2.0
+- **Primary Language:** Bash/Shell scripts (192 files, ~50% of codebase)
+- **Version:** 2.0.0
 - **License:** MIT
 - **Documentation Language:** Primarily Japanese
-- **Maturity:** Active development with frequent commits
+- **Maturity:** Active development with frequent commits (282+ merged PRs)
 - **Target Users:** IT professionals, system administrators, DevOps engineers
+- **Shared Library:** `lib/common.sh` provides reusable utilities across scripts
 
 ### Repository Statistics
-- **Total Files:** 315+
-- **Total Directories:** 61
-- **Languages:** 12+ (Bash, SQL, Python, PowerShell, Go, JavaScript, YAML, etc.)
+- **Total Files:** 384+
+- **Total Directories:** 77
+- **Languages:** 12+ (Bash, SQL, Python, PowerShell, Go, JavaScript, Java, Haskell, BASIC, YAML, etc.)
 - **Database Systems:** 6 (MySQL, PostgreSQL, MongoDB, Redis/Valkey, DynamoDB, Oracle)
 - **Cloud Providers:** AWS, Google Cloud Platform
+- **CI/CD:** GitHub Actions (security tests pipeline)
 
 ---
 
@@ -57,63 +63,109 @@ My-infra is a comprehensive **Shell Script Collection for Infrastructure & Busin
 
 ```
 /home/user/My-infra/
-├── AWS/                    # Amazon Web Services automation
-├── Google/                 # Google Cloud services
+├── .github/workflows/      # GitHub Actions CI/CD pipelines
+│
+│   ── Infrastructure & Cloud ──
+├── AWS/                    # Amazon Web Services automation (EC2, ALB, SSO, Terraform)
+├── Google/                 # Google Cloud services, GAS (Google Apps Scripts)
 ├── Bigquery/              # BigQuery data warehouse management
-├── DB/                    # General database management
-├── DynamoDB/              # AWS DynamoDB specific
+├── deploy/                # Deployment automation scripts
+│
+│   ── Databases ──
+├── DB/                    # Cross-database tools (MySQL, PostgreSQL, backup/restore)
+├── DynamoDB/              # AWS DynamoDB management
 ├── MongoDB/               # MongoDB documentation & tools
-├── mysql/                 # MySQL utilities
+├── mysql/                 # MySQL utilities, Docker configs, batch tools
 ├── redis/                 # Redis configuration
-├── Valkey/                # Valkey cluster management
-├── deploy/                # Deployment automation
-├── server/                # Server management scripts
-├── network/               # Network infrastructure
-├── security/              # Security validation
-├── pc/                    # Windows PC management
-├── assign/                # Environment configuration
-├── Validation/            # Input validation utilities
-├── game/                  # Entertainment utilities
+├── Valkey/                # Valkey cluster management (Ansible)
+│
+│   ── System Administration ──
+├── server/                # Server management (SSH, monitoring, backups, disk)
+├── network/               # Network infrastructure & testing
+├── network_tool/          # TUI-based network programming tools
+├── security/              # Security validation & policy enforcement
+├── pc/                    # Windows PC management (PowerShell)
+│
+│   ── Shared Libraries & Utilities ──
+├── lib/                   # Shared utility library (common.sh)
+├── utils/                 # General utilities (Timer, MCP, Quiz, Monitor, M1)
+├── scripts/               # General-purpose scripts (testing, scoring, etc.)
+├── Validation/            # Input validators (Luhn, email, phone, password)
+│
+│   ── Entertainment & Interactive ──
+├── Asobi/                 # Entertainment scripts (45+ scripts: ASCII art, games, music)
+├── chat/                  # Shell-based group chat system (server/client/GUI)
+├── karaoke/               # Karaoke system with song library (36+ songs)
+├── kawaii/                 # Interactive "kawaii" judgment system
+├── marathon/              # 24-hour TV-style 100km marathon simulator
+├── restaurant/            # Dynamic restaurant intro page generator
+├── game/                  # Educational games and utilities
+│
+│   ── Data & Content ──
+├── data/                  # Data processing files (Go, shell)
+├── art/                   # ASCII art scripts (ninja, train)
+├── query/                 # SQL query examples (1.sql - 5.sql)
 ├── awk/                   # AWK programming examples
-├── query/                 # SQL query examples
+│
+│   ── Other ──
+├── assign/                # Environment configuration
 ├── http/                  # HTTP monitoring
 ├── work/                  # Workflow automation
+├── week/                  # Weekly scheduling
 ├── 2025/                  # Calendar/scheduling
-├── Timer.sh               # Countdown timer utility (v2.0)
-├── MCP.sh                 # ASCII art animation
-├── Quiz.sh                # Japanese quiz system
+├── tests/                 # Test suite (BATS security tests, Python tests)
+├── Basic/                 # BASIC programming examples
+├── Haskell/               # Haskell programming examples
+│
+│   ── Root Files ──
+├── CLAUDE.md              # This file - AI assistant guide
+├── README.md              # Main documentation (Japanese)
+├── SECURITY_TESTING_REPORT.md  # Security testing report
 ├── site.yml               # Ansible playbook (Valkey cluster)
 ├── inventory.ini          # Ansible inventory
-├── README.md              # Main documentation (Japanese)
-└── CLAUDE.md              # This file
+└── dockerfile             # Docker configuration
 ```
 
 ### Domain-Specific Directories
 
 #### Infrastructure & Cloud
-- **AWS/**: ALB configs, auto-scaling, SSO, CLI scripts
+- **AWS/**: EC2 management, ALB configs, auto-scaling, SSO, CLI scripts, Terraform modules
 - **Google/**: GAS (Google Apps Scripts), Cloud services
 - **Bigquery/**: Dataset operations, query management
 - **deploy/**: Deployment automation scripts
 
 #### Databases
-- **DB/**: Cross-database tools (MySQL, PostgreSQL, backup/restore)
-- **mongodb/**: MongoDB utilities, SQL examples
+- **DB/**: Cross-database tools (MySQL, PostgreSQL, backup/restore, PDF-to-Excel conversion)
+- **MongoDB/**: MongoDB utilities, SQL examples
 - **mysql/**: MySQL backup, Docker configs, batch tools
-- **redis/**, **Valkey/**: Redis/Valkey configurations and cluster setup
+- **redis/**, **Valkey/**: Redis/Valkey configurations and cluster setup (Ansible-managed)
 - **DynamoDB/**: AWS DynamoDB management
 
 #### System Administration
-- **server/**: SSH, monitoring, backups, disk management
-- **network/**: Network testing, calculations
-- **security/**: Validation, policy enforcement
-- **pc/**: Windows management (PowerShell scripts)
+- **server/**: SSH management, monitoring, backups, disk management, daily DB backups
+- **network/**: Network testing, subnet calculations
+- **network_tool/**: TUI-based interactive network programming tools
+- **security/**: Input validation, security policy enforcement
+- **pc/**: Windows management scripts (PowerShell), auto-provisioning
 
-#### Development & Utilities
-- **Validation/**: Input validators (Luhn, email, phone, password)
-- **query/**: SQL query examples (1.sql - 5.sql)
-- **awk/**: AWK programming examples
+#### Shared Libraries & Utilities
+- **lib/**: Shared common library (`common.sh`) — colors, logging, terminal control, progress bars
+- **utils/**: Standalone utilities (Timer, MCP animation, Quiz, Monitor, M1 scoring)
+- **scripts/**: General-purpose scripts (frozen, mensetu, scoring, test runners)
+- **Validation/**: Input validators (Luhn algorithm, email, phone, password)
+
+#### Entertainment & Interactive
+- **Asobi/**: 45+ entertainment scripts (ASCII art, music, games, quizzes, fortune-telling)
+- **chat/**: Shell-based group chat with server/client architecture and GUI
+- **karaoke/**: Karaoke system with dynamic song library (demo, 80s-90s J-pop, enka)
+- **kawaii/**: Interactive attractiveness judgment system
+- **marathon/**: 24-hour TV marathon simulation
+- **restaurant/**: Dynamic restaurant page generator (shell-script-based content generation)
 - **game/**: Educational games and utilities
+
+#### Testing
+- **tests/security/**: BATS security tests and Python input validation tests
+- **.github/workflows/**: CI/CD pipeline for automated security testing
 
 ---
 
@@ -123,20 +175,27 @@ My-infra is a comprehensive **Shell Script Collection for Infrastructure & Busin
 
 | Technology | Usage | File Count |
 |-----------|-------|------------|
-| Bash/Shell | Infrastructure automation, system tasks | 172 |
+| Bash/Shell | Infrastructure automation, TUI apps, entertainment | 192 |
+| Text | Song lyrics, configuration data | 30 |
 | SQL | Database queries, schema management | 19 |
-| Markdown | Documentation | 15 |
-| PowerShell | Windows PC management | 12 |
-| YAML | Infrastructure as Code | 7 |
-| Python | Data processing, validation | 4 |
-| JavaScript | GAS automation, crypto tools | 2 |
+| Markdown | Documentation | 18 |
+| YAML | Ansible playbooks, CI/CD, configuration | 8 |
+| PureScript-like (.psl) | Utility functions | 6 |
+| Python | Data processing, security testing | 5 |
+| PowerShell | Windows PC management | 4 |
+| BASIC | Educational programming examples | 3 |
+| BATS | Bash Automated Testing System | 2 |
+| JavaScript | GAS automation | 2 |
 | Go | High-performance data processing | 1 |
+| Java | Validation tools | 1 |
+| Haskell | Functional programming examples | 1 |
 
 ### Infrastructure Tools
 - **Container Orchestration:** Docker, Docker Compose
 - **Configuration Management:** Ansible
 - **Infrastructure as Code:** Terraform
 - **Version Control:** Git
+- **CI/CD:** GitHub Actions
 
 ### Cloud Platforms
 - **AWS:** EC2, ALB, DynamoDB, Elasticache, RDS, Auto-scaling, SSO
@@ -146,6 +205,70 @@ My-infra is a comprehensive **Shell Script Collection for Infrastructure & Busin
 - **Relational:** MySQL/MariaDB, PostgreSQL, Oracle DB
 - **NoSQL:** MongoDB, DynamoDB
 - **Cache/Key-Value:** Redis, Valkey
+
+### Testing Tools
+- **BATS:** Bash Automated Testing System for shell script testing
+- **pytest:** Python test framework for input validation tests
+- **ShellCheck:** Static analysis for shell scripts
+- **gitleaks:** Credential leak detection
+- **Trivy:** Dependency vulnerability scanning
+- **Bandit:** Python security analysis
+
+---
+
+## Shared Library (lib/common.sh)
+
+The repository includes a shared utility library at `lib/common.sh` that provides reusable functions across scripts. New scripts should use this library to reduce code duplication.
+
+### How to Source
+
+```bash
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+```
+
+The library includes a double-load prevention guard (`_COMMON_SH_LOADED`).
+
+### Available Features
+
+#### Color Constants
+- **Reset/Style:** `C_RESET`, `C_BOLD`, `C_DIM`, `C_ITALIC`, `C_UNDERLINE`, `C_BLINK`, `C_REVERSE`
+- **Foreground (bold):** `C_BLACK`, `C_RED`, `C_GREEN`, `C_YELLOW`, `C_BLUE`, `C_MAGENTA`, `C_CYAN`, `C_WHITE`
+- **Bright foreground:** `C_BRIGHT_RED`, `C_BRIGHT_GREEN`, `C_BRIGHT_YELLOW`, `C_BRIGHT_BLUE`, `C_BRIGHT_MAGENTA`, `C_BRIGHT_CYAN`
+- **Background:** `C_BG_BLACK`, `C_BG_RED`, `C_BG_GREEN`, `C_BG_YELLOW`, `C_BG_BLUE`, `C_BG_MAGENTA`, `C_BG_CYAN`, `C_BG_WHITE`, `C_BG_GRAY`
+- **User color palette:** `USER_COLOR_PALETTE` array (12 colors for chat/multi-user systems)
+
+#### Terminal Functions
+- `update_terminal_size` — Updates `TERM_ROWS` and `TERM_COLS` globals
+- `clear_screen` — Clears the terminal
+- `move_cursor ROW COL` — Positions cursor
+- `clear_line` — Clears current line
+- `hide_cursor` / `show_cursor` — Cursor visibility control
+- `draw_separator ROW [CHAR]` — Draws horizontal separator line
+
+#### Text Display
+- `print_center TEXT [ROW] [COLOR]` — Center-aligned text output
+- `print_right TEXT [ROW] [COLOR]` — Right-aligned text output
+
+#### Logging
+- `log_info MSG` — Info-level log (cyan)
+- `log_success MSG` — Success log (green)
+- `log_warning MSG` — Warning log (yellow)
+- `log_error MSG` — Error log to stderr (red)
+- `log_debug MSG` — Debug log (only when `DEBUG=1`)
+- `error_exit MSG [CODE]` — Log error and exit
+
+#### Time/Date
+- `format_time SECONDS` — Format as `HH:MM:SS`
+- `format_time_short SECONDS` — Format as `MM:SS`
+- `get_timestamp` — Returns `YYYY-MM-DD HH:MM:SS`
+- `get_current_year` — Returns current year
+
+#### Utilities
+- `get_user_color NAME` — Deterministic color from username hash
+- `confirm MSG [DEFAULT]` — Interactive Y/N prompt
+- `draw_progress_bar CURRENT TOTAL [WIDTH]` — Visual progress bar
+- `show_spinner` — Animated spinner for background processes
+- `with_file_lock LOCKFILE COMMAND...` — flock-based file locking
 
 ---
 
@@ -173,6 +296,22 @@ set -euo pipefail
 - `set -e`: Exit immediately if a command exits with non-zero status
 - `set -u`: Exit if an undefined variable is used
 - `set -o pipefail`: Pipeline fails if any command fails (not just the last)
+
+#### Using the Common Library
+For scripts that need colors, logging, terminal control, or progress indicators, source the shared library instead of redefining constants:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+# 共通ライブラリの読み込み
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+# lib/common.sh の関数を使用
+log_info "処理を開始します"
+draw_progress_bar 50 100
+log_success "処理が完了しました"
+```
 
 #### Constants and Variables
 ```bash
@@ -283,6 +422,9 @@ parse_arguments() {
 ```
 
 ### Color Codes for Output
+
+For scripts that do NOT source `lib/common.sh`, define colors locally:
+
 ```bash
 readonly COLOR_TITLE='\033[1;36m'    # シアン（太字）
 readonly COLOR_TIME='\033[1;32m'     # 緑（太字）
@@ -291,6 +433,8 @@ readonly COLOR_ERROR='\033[1;31m'    # 赤（太字）
 readonly COLOR_SUCCESS='\033[1;32m'  # 緑（太字）
 readonly COLOR_RESET='\033[0m'       # リセット
 ```
+
+For scripts that DO source `lib/common.sh`, use the `C_*` constants instead (e.g., `C_RED`, `C_GREEN`, `C_RESET`).
 
 ### Python Script Standards
 
@@ -458,7 +602,7 @@ ORDER BY
 
 2. **Server Management**
    - SSH key management
-   - Backup automation
+   - Backup automation (`server/dailyDbBackup.sh`)
    - Disk space monitoring
    - Resource alerting
 
@@ -489,28 +633,83 @@ ansible-playbook -i inventory.ini site.yml --tags phase2,phase3
    - Verify record counts
    - Run post-import checks
 
+### Interactive/TUI Application Development
+
+New TUI-based and interactive scripts should:
+1. Source `lib/common.sh` for shared terminal functions
+2. Use `hide_cursor` / `show_cursor` for clean TUI experience
+3. Implement `trap cleanup EXIT` to restore terminal state
+4. Use `update_terminal_size` to adapt to terminal dimensions
+5. Use `draw_separator`, `print_center`, `move_cursor` for layout
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+cleanup() {
+    show_cursor
+    clear_screen
+}
+trap cleanup EXIT
+
+hide_cursor
+update_terminal_size
+clear_screen
+
+# TUI rendering loop
+while true; do
+    print_center "タイトル" 1 "$C_CYAN"
+    draw_separator 2
+    # ...
+    read -rsn1 key
+done
+```
+
+---
+
+## CI/CD Pipeline
+
+### GitHub Actions Security Tests
+
+The repository has a CI/CD pipeline at `.github/workflows/security-tests.yml` that runs on:
+- **Push** to `main`, `master`, and `claude/**` branches
+- **Pull requests** to `main` and `master`
+- **Scheduled** daily at 03:00 UTC (12:00 JST)
+- **Manual dispatch** via `workflow_dispatch`
+
+### Pipeline Jobs
+
+| Job | Description | Tools |
+|-----|-------------|-------|
+| credential-scan | 認証情報漏洩スキャン | BATS, gitleaks |
+| shellcheck | シェルスクリプト静的解析 | shellcheck |
+| command-injection-tests | コマンドインジェクション検査 | BATS |
+| python-security-tests | Python入力検証テスト | pytest, Bandit, Safety |
+| dependency-scan | 依存関係脆弱性スキャン | Trivy |
+| owasp-dependency-check | OWASP依存関係チェック (scheduled/manual only) | OWASP Dependency-Check |
+| security-summary | テスト結果サマリー | — |
+
+### Critical Directories for ShellCheck
+The CI pipeline runs shellcheck on these directories with `--severity=warning`:
+- `DB/`, `deploy/`, `server/`, `security/`, `AWS/`
+
 ---
 
 ## Git Practices
 
 ### Branch Strategy
 
-Based on recent commits, the repository uses:
+The repository uses:
 - **Main/Master branch**: Production-ready code
-- **Feature branches**: Named with descriptive labels (e.g., `feature/35`)
-- **Claude branches**: AI-generated work uses `claude/` prefix
+- **Feature branches**: Named with descriptive labels (e.g., `feature/35`, `feature/119`)
+- **Claude branches**: AI-assisted work uses `claude/` prefix (e.g., `claude/network-programming-gui-CBtuM`)
 
 ### Commit Message Conventions
 
-Recent commit patterns show:
-```
-<file_name> を更新          # Japanese update message
-Update <file_name>           # English update message
-Create <file_name>           # New file creation
-Merge pull request #N        # PR merge
-```
+The repository follows conventional commit format:
 
-**Recommended Format:**
 ```
 <type>: <subject>
 
@@ -528,6 +727,14 @@ Merge pull request #N        # PR merge
 - `test`: テスト追加・修正
 - `chore`: その他の変更
 
+**Recent examples from commit history:**
+```
+feat: TUIベースのネットワークプログラミングツールを追加
+feat: カラオケ機能を追加
+refactor: 共通ユーティリティライブラリを作成しコード重複を削減
+fix: 複数のセキュリティ脆弱性を修正
+```
+
 ### Pull Request Process
 
 1. Create feature branch from main
@@ -537,6 +744,8 @@ Merge pull request #N        # PR merge
 5. Address review feedback
 6. Merge after approval
 
+The repository has 282+ merged PRs and uses a rapid merge cadence.
+
 ---
 
 ## File Organization
@@ -544,13 +753,18 @@ Merge pull request #N        # PR merge
 ### Naming Conventions
 
 #### Shell Scripts
-- Use lowercase with underscores: `db_backup.sh`
+- Use lowercase with underscores: `db_backup.sh`, `daily_db_backup.sh`
 - Descriptive names indicating purpose: `ec2_ssh_check1.sh`
 - Version suffixes when applicable: `test1.sh`, `test2.sh`
+- Japanese names allowed for entertainment scripts: `赤ちゃんベイビー.sh`, `喧嘩.sh`
 
 #### Configuration Files
 - Use descriptive names: `inventory.ini`, `site.yml`
 - Include context: `docker-compose.yml`
+
+#### Song/Data Files
+- Text files for karaoke: `karaoke/songs/*.txt`
+- Descriptive names for data: `data/data.go`
 
 #### Documentation
 - Use README.md for directory documentation
@@ -560,7 +774,21 @@ Merge pull request #N        # PR merge
 
 1. **Functional Grouping**: Scripts are organized by technology/purpose
 2. **Flat Structure**: Most directories are single-level
-3. **Subdirectories**: Used for complex modules (e.g., `folder/Docker/`)
+3. **Subdirectories**: Used for complex modules (e.g., `karaoke/songs/`, `folder/Docker/`)
+4. **Separation of Concerns**: Infrastructure, utilities, entertainment, and tests are in separate directories
+5. **Shared Code**: Common utilities live in `lib/` and are sourced by other scripts
+
+### Recent Reorganization (Since Dec 2025)
+
+Many root-level scripts were moved into organized subdirectories:
+- `Timer.sh`, `MCP.sh`, `Quiz.sh`, `M1.sh` → `utils/`
+- Entertainment scripts → `Asobi/`
+- Network scripts → `network/`
+- Validation scripts → `Validation/`
+- Data files → `data/`
+- PC management → `pc/`
+- General scripts → `scripts/`
+- AWS-specific scripts → `AWS/`
 
 ---
 
@@ -690,6 +918,69 @@ validate_phone() {
 }
 ```
 
+### TUI Application Pattern (New)
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+readonly PROG_NAME=$(basename "$0")
+readonly VERSION="1.0"
+
+# クリーンアップ処理
+cleanup() {
+    show_cursor
+    printf '\033[?1049l'  # メインスクリーン復帰
+}
+trap cleanup EXIT INT TERM
+
+# 初期化
+printf '\033[?1049h'  # 代替スクリーンバッファ
+hide_cursor
+update_terminal_size
+
+# メインループ
+while true; do
+    clear_screen
+    print_center "アプリケーション名" 1 "$C_CYAN"
+    draw_separator 2
+
+    # コンテンツ描画
+    move_cursor 4 2
+    echo -ne "${C_GREEN}メニュー項目${C_RESET}"
+
+    # キー入力処理
+    read -rsn1 key
+    case "$key" in
+        q|Q) break ;;
+        # ...
+    esac
+done
+```
+
+### Chat/Server-Client Pattern (New)
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+# ファイルロックを使用した安全なメッセージ書き込み
+send_message() {
+    local chat_file="$1"
+    local username="$2"
+    local message="$3"
+    local timestamp
+    timestamp=$(get_timestamp)
+
+    with_file_lock "${chat_file}.lock" \
+        bash -c "echo '${timestamp}|${username}|${message}' >> '${chat_file}'"
+}
+```
+
 ---
 
 ## Testing Guidelines
@@ -702,15 +993,33 @@ validate_phone() {
    shellcheck script.sh
    ```
 
-2. **Unit Testing**
+2. **BATS Testing**
+   The repository uses BATS (Bash Automated Testing System) for security tests:
+   ```bash
+   # テストの実行
+   bats tests/security/test_credential_exposure.bats
+   bats tests/security/test_command_injection.bats
+   ```
+
+3. **Unit Testing**
    - Test individual functions with various inputs
    - Verify error handling
    - Check edge cases
 
-3. **Integration Testing**
+4. **Integration Testing**
    - Test script with real resources (use test environment)
    - Verify backup/restore cycles
    - Test with different configurations
+
+### Python Testing
+
+```bash
+# セキュリティ入力検証テストの実行
+python -m pytest tests/security/test_input_validation.py -v --tb=short
+
+# Bandit セキュリティスキャン
+bandit -r . -ll --exclude ./tests,./venv
+```
 
 ### Ansible Playbook Testing
 
@@ -794,10 +1103,12 @@ Every script should include:
 - **Code Comments**: Prefer Japanese to match existing patterns
 - **Variable Names**: Mix of English and Japanese; follow file's existing style
 - **Error Messages**: Use Japanese for user-facing messages
+- **Commit Messages**: Use Japanese descriptions with conventional commit prefixes (e.g., `feat: カラオケ機能を追加`)
 
 #### 2. Code Style Consistency
 - **Always use `set -euo pipefail`** in shell scripts
 - **Define constants with `readonly`**
+- **Source `lib/common.sh`** for colors, logging, and terminal control in new scripts
 - **Use color codes** for user-facing output (follow existing patterns)
 - **Implement proper error handling** with trap and cleanup functions
 - **Validate all inputs** before processing
@@ -806,6 +1117,7 @@ Every script should include:
 - [ ] Shebang line present (`#!/bin/bash`)
 - [ ] Strict mode enabled (`set -euo pipefail`)
 - [ ] Script header with description and version
+- [ ] Source `lib/common.sh` if using colors/logging/terminal functions
 - [ ] Constants defined at top
 - [ ] Function organization with section markers
 - [ ] Error handling implemented
@@ -813,7 +1125,7 @@ Every script should include:
 - [ ] Version information (`--version` flag)
 - [ ] Input validation
 - [ ] Proper exit codes
-- [ ] Cleanup on exit
+- [ ] Cleanup on exit (especially for TUI apps — restore cursor, screen)
 
 #### 4. Database Operations
 - **Always backup before modifications**
@@ -836,6 +1148,7 @@ Every script should include:
 - **Validate and sanitize all inputs**
 - **Use parameterized queries for SQL**
 - **Follow principle of least privilege**
+- **Be aware of CI/CD security scanning** — code pushed to `claude/**` branches triggers security tests
 
 #### 7. File Modifications
 - **Read existing files before modifying**
@@ -850,6 +1163,7 @@ Every script should include:
 - **Check for memory/resource leaks**
 - **Test with production-like data volumes**
 - **Verify cleanup operations**
+- **Run `shellcheck` on critical scripts** before committing
 
 #### 9. Documentation Updates
 - **Update README when adding new scripts**
@@ -864,6 +1178,27 @@ Every script should include:
 - **Don't ignore shellcheck warnings**: Fix or explicitly disable with justification
 - **Don't hardcode paths**: Use variables and configuration
 - **Don't assume user environment**: Check for required tools
+- **Don't redefine common.sh functions**: Source the library instead
+- **Don't forget cleanup in TUI apps**: Always restore cursor and terminal state
+
+#### 11. Directory Placement Guide
+
+When creating new scripts, place them in the appropriate directory:
+
+| Script Type | Directory |
+|------------|-----------|
+| AWS automation | `AWS/` |
+| Database tools | `DB/` |
+| Server management | `server/` |
+| Network tools | `network/` or `network_tool/` |
+| Security scripts | `security/` |
+| Input validators | `Validation/` |
+| General utilities | `utils/` |
+| Entertainment/games | `Asobi/` |
+| Interactive TUI apps | Appropriate domain dir or new dir |
+| Shared library functions | `lib/common.sh` |
+| Test scripts | `tests/` |
+| General-purpose scripts | `scripts/` |
 
 ### Example: Creating a New Utility Script
 
@@ -873,21 +1208,19 @@ set -euo pipefail
 
 #
 # データ処理ユーティリティ
-# 作成日: 2025-12-02
+# 作成日: 2026-02-13
 # バージョン: 1.0
 #
 # CSVファイルを読み込み、指定されたフォーマットで出力します
 #
 
+# 共通ライブラリの読み込み
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
 # ===== 設定（定数） =====
 readonly PROG_NAME=$(basename "$0")
 readonly VERSION="1.0"
 readonly SUPPORTED_FORMATS=("json" "xml" "sql")
-
-# 色定義
-readonly COLOR_ERROR='\033[1;31m'
-readonly COLOR_SUCCESS='\033[1;32m'
-readonly COLOR_RESET='\033[0m'
 
 # ===== グローバル変数 =====
 declare input_file=""
@@ -917,11 +1250,6 @@ CSVファイルを読み込み、指定されたフォーマットで変換し�
 EOF
 }
 
-error_exit() {
-    echo -e "${COLOR_ERROR}エラー: $1${COLOR_RESET}" >&2
-    exit 1
-}
-
 validate_format() {
     local format="$1"
     for supported in "${SUPPORTED_FORMATS[@]}"; do
@@ -939,8 +1267,9 @@ process_csv() {
     local format="$2"
     local output="$3"
 
+    log_info "処理を開始: $input (形式: $format)"
     # 処理ロジックをここに実装
-    echo -e "${COLOR_SUCCESS}処理完了${COLOR_RESET}"
+    log_success "処理完了"
 }
 
 # ===== 引数解析 =====
@@ -998,6 +1327,19 @@ main "$@"
 
 ## Version History
 
+### Version 2.0.0 (2026-02-13)
+- Updated repository statistics (384+ files, 77 directories, 192 shell scripts)
+- Added documentation for shared library `lib/common.sh`
+- Added CI/CD pipeline documentation (GitHub Actions security tests)
+- Updated project structure to reflect major reorganization (scripts moved to subdirectories)
+- Added new directories: `Asobi/`, `chat/`, `karaoke/`, `kawaii/`, `lib/`, `marathon/`, `network_tool/`, `restaurant/`, `scripts/`, `utils/`, `data/`, `art/`, `tests/`
+- Added TUI application development pattern
+- Added Chat/Server-Client pattern
+- Added BATS and Python security testing documentation
+- Added directory placement guide for AI assistants
+- Updated commit message conventions to reflect actual usage
+- Updated references to reflect moved files
+
 ### Version 1.0.0 (2025-12-02)
 - Initial CLAUDE.md creation
 - Comprehensive repository analysis
@@ -1019,10 +1361,15 @@ For questions or issues related to this repository:
 ## References
 
 - Main README: `/home/user/My-infra/README.md`
+- Shared Library: `/home/user/My-infra/lib/common.sh`
 - AWS Documentation: `/home/user/My-infra/AWS/readme.md`
 - Database Documentation: `/home/user/My-infra/DB/Readme.md`
 - Ansible Site Configuration: `/home/user/My-infra/site.yml`
-- Example Timer Script: `/home/user/My-infra/Timer.sh`
+- CI/CD Pipeline: `/home/user/My-infra/.github/workflows/security-tests.yml`
+- Security Report: `/home/user/My-infra/SECURITY_TESTING_REPORT.md`
+- Security Tests: `/home/user/My-infra/tests/security/`
+- Timer Utility: `/home/user/My-infra/utils/Timer.sh`
+- Quiz Utility: `/home/user/My-infra/utils/Quiz.sh`
 
 ---
 

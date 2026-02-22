@@ -9,7 +9,7 @@ GetCommand
 } = require(’@aws-sdk/lib-dynamodb’);
 const { v4: uuidv4 } = require(‘uuid’);
 
-// 環境変数からテーブル名を取得
+
 const ORDERS_TABLE = process.env.ORDERS_TABLE || ‘Orders’;
 const AWS_REGION = process.env.AWS_REGION || ‘us-east-1’;
 const ENVIRONMENT = process.env.ENVIRONMENT || ‘development’;

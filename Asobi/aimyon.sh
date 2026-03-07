@@ -40,11 +40,11 @@ display_song() {
     IFS=':' read -r title lyrics single year note <<< "$song_data"
     
     print_separator
-    print_formatted "title" "♪ $title"
+    print_formatted "タイトル" "♪ $title"
     echo -e "\n${BOLD}Lyrics:${RESET}"
-    print_formatted "lyrics" "$lyrics"
+    print_formatted "歌詞" "$lyrics"
     echo -e "\n${BOLD}Single:${RESET}"
-    print_formatted "single" "$single ($year)"
+    print_formatted "シングル" "$single ($year)"
     echo -e "\n${BOLD}Note:${RESET} $note"
     print_separator
 }

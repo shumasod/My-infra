@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # =========================
-# Terminal Color Utilities
+# Terminal Color
 # =========================
 if [[ -t 1 ]] && [[ "$(tput colors 2>/dev/null || echo 0)" -ge 8 ]]; then
   readonly BROWN='\033[0;33m'

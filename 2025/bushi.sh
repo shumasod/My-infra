@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # Constants / Config
 # =========================
 readonly FRAME_INTERVAL="0.07"
-readonly TITLE="🐎 2026年 午年 — だいちを駆ける馬 🐎"
+readonly TITLE="🐎 2026年 午年 — 大地を駆ける馬 🐎"
 
 # =========================
 # Terminal Color Utilities

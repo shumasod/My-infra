@@ -33,7 +33,7 @@ draw_decoration() {
 }
 
 # =========================
-# Horse ASCII Art
+# Horse アスキーアート
 # =========================
 draw_horse() {
   echo -e "${BROWN}"

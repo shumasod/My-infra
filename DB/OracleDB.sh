@@ -1,4 +1,4 @@
--- データベースとテーブル作成
+-- データベースとテーブル作成するとき
 CREATE DATABASE my_database
 CONTROLFILE REUSE
 LOGFILE 

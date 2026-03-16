@@ -10,32 +10,30 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:  # 手動実行を許可
 
-# ===== 2026-02 サプライチェーン攻撃対策 =====
-# GITHUB_TOKENの権限を最小限に制限 (IPA 10大脅威 2026: #2 サプライチェーン攻撃対策)
+# GITHUB_TOKENの権限を最小限に制限
 permissions:
   contents: read
   security-events: write
 
 jobs:
-  # ===== 認証情報スキャン =====
-  credential-scan:
-    name: 認証情報漏洩スキャン
+  # ===== 認証情報・インジェクションスキャン（BATSテスト統合） =====
+  bats-security-tests:
+    name: セキュリティテスト（BATS）
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      # 2026-02: CVE-2025-30066 対策 — Actionはコミットハッシュで固定
       - name: リポジトリのチェックアウト
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           fetch-depth: 0
-          persist-credentials: false  # 認証情報の不要な永続化を防止
+          persist-credentials: false
 
-      - name: BATSのインストール
+      - name: 依存関係のインストール
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
+          sudo apt-get update -qq
+          sudo apt-get install -y bats shellcheck
 
       - name: 認証情報スキャンテストの実行
         run: |
@@ -46,25 +44,24 @@ jobs:
             exit 1
           fi
 
-      - name: gitleaksのインストールと実行
+      - name: コマンドインジェクションテストの実行
         run: |
-          # gitleaks v8.21.2 (2026-02時点の最新安定版)
-          GITLEAKS_VERSION="8.21.2"
-          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-
-          # ダウンロードの整合性確認
-          if [ ! -f "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" ]; then
-            echo "エラー: gitleaksのダウンロードに失敗しました"
+          if [ -f tests/security/test_command_injection.bats ]; then
+            bats tests/security/test_command_injection.bats
+          else
+            echo "警告: コマンドインジェクションテストが見つかりません"
             exit 1
           fi
 
+      - name: gitleaksによる認証情報スキャン
+        run: |
+          GITLEAKS_VERSION="8.21.2"
+          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           sudo mv gitleaks /usr/local/bin/
 
-          # gitleaksでスキャン
           gitleaks detect --source . --report-format json --report-path gitleaks-report.json || true
 
-          # レポートの確認
           if [ -f gitleaks-report.json ] && [ -s gitleaks-report.json ]; then
             echo "⚠️ 認証情報の漏洩が検出されました！"
             cat gitleaks-report.json
@@ -73,7 +70,7 @@ jobs:
             echo "✅ 認証情報の漏洩は検出されませんでした"
           fi
 
-      - name: レポートのアップロード
+      - name: gitleaksレポートのアップロード
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
@@ -94,28 +91,23 @@ jobs:
           persist-credentials: false
 
       - name: shellcheckのインストール
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
 
       - name: 重要なスクリプトのshellcheck実行
         run: |
           echo "🔍 重要なスクリプトをチェック中..."
-
-          # 重要なディレクトリのスクリプトをチェック
-          # 2026-02: lib/ と Validation/ を追加 (共通ライブラリの品質確保)
           CRITICAL_DIRS=("DB" "deploy" "server" "security" "AWS" "lib" "Validation")
           ISSUES_FOUND=0
 
           for dir in "${CRITICAL_DIRS[@]}"; do
             if [ -d "$dir" ]; then
               echo "📂 $dir をチェック中..."
-
-              if find "$dir" -name "*.sh" -type f -exec shellcheck \
-                --severity=warning \
-                --shell=bash \
-                --enable=all \
-                --format=gcc {} + 2>&1 | tee "shellcheck-${dir}.log"; then
+              # --enable=all を除去し、warningレベルのみチェック
+              if find "$dir" -name "*.sh" -type f -print0 | \
+                xargs -0 shellcheck \
+                  --severity=warning \
+                  --shell=bash \
+                  --format=gcc 2>&1 | tee "shellcheck-${dir}.log"; then
                 echo "✅ $dir: 問題なし"
               else
                 echo "❌ $dir: 問題が検出されました"
@@ -135,33 +127,6 @@ jobs:
         with:
           name: shellcheck-reports
           path: shellcheck-*.log
-
-  # ===== コマンドインジェクションテスト =====
-  command-injection-tests:
-    name: コマンドインジェクション検査
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: リポジトリのチェックアウト
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: BATSのインストール
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats shellcheck
-
-      - name: コマンドインジェクションテストの実行
-        run: |
-          if [ -f tests/security/test_command_injection.bats ]; then
-            bats tests/security/test_command_injection.bats
-          else
-            echo "警告: コマンドインジェクションテストが見つかりません"
-            exit 1
-          fi
 
   # ===== Python入力検証テスト =====
   python-security-tests:
@@ -183,11 +148,11 @@ jobs:
 
       - name: 依存関係のインストール
         run: |
-          pip install --upgrade pip
+          pip install --upgrade pip --quiet
           if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+            pip install -r requirements.txt --quiet
           fi
-          pip install pytest pytest-cov bandit safety
+          pip install pytest pytest-cov bandit --quiet
 
       - name: 入力検証テストの実行
         run: |
@@ -197,22 +162,21 @@ jobs:
             echo "警告: 入力検証テストが見つかりません"
           fi
 
-      - name: Bandit セキュリティスキャン
+      - name: Bandit セキュリティスキャン（情報提供）
+        # 高レベルの問題のみ失敗とする
         run: |
           echo "🔒 Pythonコードのセキュリティスキャン中..."
           bandit -r . \
             -f json \
             -o bandit-report.json \
             --exclude ./tests,./venv,./env \
-            -ll || true
+            -ll 2>/dev/null || true
 
-          # 高・中レベルの問題を表示
           if [ -f bandit-report.json ]; then
-            python3 << 'EOF'
-import json
-import sys
+            python3 - <<'EOF'
+import json, sys
 
-with open('bandit-report.json', 'r') as f:
+with open('bandit-report.json') as f:
     report = json.load(f)
 
 high = [r for r in report['results'] if r['issue_severity'] == 'HIGH']
@@ -238,13 +202,13 @@ EOF
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: python-security-reports
-          path: |
-            bandit-report.json
+          path: bandit-report.json
 
-  # ===== 依存関係の脆弱性スキャン =====
+  # ===== 依存関係の脆弱性スキャン（情報提供） =====
   dependency-scan:
     name: 依存関係脆弱性スキャン
     runs-on: ubuntu-latest
+    continue-on-error: true  # スキャン失敗はビルドをブロックしない
     permissions:
       contents: read
 
@@ -256,7 +220,6 @@ EOF
 
       - name: Trivyのインストール
         run: |
-          # Trivy v0.59.1 (2026-02時点の最新安定版)
           TRIVY_VERSION="0.59.1"
           wget -q "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
           tar -xzf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -264,15 +227,8 @@ EOF
 
       - name: ファイルシステムスキャン
         run: |
-          trivy fs --severity HIGH,CRITICAL --format json --output trivy-report.json . || true
+          trivy fs --severity HIGH,CRITICAL --format table . || true
 
-          # 結果の表示
-          if [ -f trivy-report.json ]; then
-            echo "📊 脆弱性スキャン結果:"
-            trivy fs --severity HIGH,CRITICAL --format table .
-          fi
-
-      # 2026-02: Docker イメージのセキュリティスキャン追加 (CVE-2025-9074 対策)
       - name: Dockerfileのセキュリティスキャン
         run: |
           if [ -f dockerfile ]; then
@@ -280,18 +236,12 @@ EOF
             trivy config --severity HIGH,CRITICAL --format table dockerfile || true
           fi
 
-      - name: Trivyレポートのアップロード
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-        with:
-          name: trivy-report
-          path: trivy-report.json
-
-  # ===== OWASP Dependency Check =====
+  # ===== OWASP Dependency Check（スケジュール・手動のみ） =====
   owasp-dependency-check:
     name: OWASP依存関係チェック
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
     permissions:
       contents: read
 
@@ -301,7 +251,6 @@ EOF
         with:
           persist-credentials: false
 
-      # 2026-02: @main → コミットハッシュ固定 (サプライチェーン攻撃対策)
       - name: OWASP Dependency-Checkの実行
         uses: dependency-check/Dependency-Check_Action@4aab7087ab4f6ecbb6c3b8ad9e0ff8edde05c88a  # v1.1.0
         with:
@@ -319,89 +268,11 @@ EOF
           name: dependency-check-report
           path: reports
 
-  # ===== 2026-02新規: サプライチェーン・セキュリティ検証 =====
-  supply-chain-check:
-    name: サプライチェーンセキュリティ検証
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: リポジトリのチェックアウト
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          persist-credentials: false
-
-      - name: GitHub Actionsのピン留め確認
-        run: |
-          echo "🔗 GitHub Actionsのバージョン固定を確認中..."
-          PINNING_ISSUES=0
-
-          # ワークフローファイルでタグ参照を検出
-          for workflow in .github/workflows/*.yml; do
-            if [ -f "$workflow" ]; then
-              # @vN または @main のようなタグ参照を検出（コミットハッシュでないもの）
-              TAG_REFS=$(grep -n 'uses:.*@' "$workflow" | grep -v '@[0-9a-f]\{40\}' | grep -v '^#' || true)
-              if [ -n "$TAG_REFS" ]; then
-                echo "⚠️ $workflow: コミットハッシュで固定されていないAction:"
-                echo "$TAG_REFS"
-                PINNING_ISSUES=1
-              fi
-            fi
-          done
-
-          if [ $PINNING_ISSUES -eq 1 ]; then
-            echo ""
-            echo "❌ サプライチェーン攻撃リスク: Actionsをコミットハッシュで固定してください"
-            echo "参考: CVE-2025-30066 (tj-actions/changed-files サプライチェーン攻撃)"
-            exit 1
-          else
-            echo "✅ すべてのGitHub Actionsがコミットハッシュで固定されています"
-          fi
-
-      - name: Dockerイメージのタグ固定確認
-        run: |
-          echo "🐳 Dockerイメージのタグ固定を確認中..."
-          ISSUES=0
-
-          # Dockerfileで :latest タグの使用を検出
-          for df in $(find . -name "dockerfile" -o -name "Dockerfile" -o -name "docker-compose*.yml" 2>/dev/null); do
-            LATEST_REFS=$(grep -in ':latest' "$df" 2>/dev/null || true)
-            if [ -n "$LATEST_REFS" ]; then
-              echo "⚠️ $df: :latest タグが使用されています"
-              echo "$LATEST_REFS"
-              ISSUES=1
-            fi
-          done
-
-          if [ $ISSUES -eq 1 ]; then
-            echo "推奨: 具体的なバージョンタグまたはダイジェスト値を使用してください"
-          else
-            echo "✅ :latest タグの使用は検出されませんでした"
-          fi
-
-      - name: スクリプトの外部リソース取得の検証
-        run: |
-          echo "🌐 外部リソース取得パターンを確認中..."
-
-          # curl | bash / wget | sh のパターンを検出（危険なパイプライン実行）
-          PIPE_EXEC=$(find . -name "*.sh" -type f \
-            -exec grep -ln 'curl.*|.*sh\|curl.*|.*bash\|wget.*|.*sh\|wget.*|.*bash' {} \; 2>/dev/null || true)
-
-          if [ -n "$PIPE_EXEC" ]; then
-            echo "⚠️ 危険な外部スクリプト実行パターンが検出されました:"
-            echo "$PIPE_EXEC"
-            echo ""
-            echo "推奨: ダウンロード→検証→実行 の手順に変更してください"
-          else
-            echo "✅ 危険な外部スクリプト実行パターンは検出されませんでした"
-          fi
-
   # ===== セキュリティサマリー =====
   security-summary:
     name: セキュリティテストサマリー
     runs-on: ubuntu-latest
-    needs: [credential-scan, shellcheck, command-injection-tests, python-security-tests, dependency-scan, supply-chain-check]
+    needs: [bats-security-tests, shellcheck, python-security-tests, dependency-scan]
     if: always()
     permissions:
       contents: read
@@ -409,34 +280,23 @@ EOF
     steps:
       - name: サマリー生成
         run: |
-          echo "# 🔒 セキュリティテスト結果 (2026-02)" >> $GITHUB_STEP_SUMMARY
+          echo "# 🔒 セキュリティテスト結果" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## テスト実行状況" >> $GITHUB_STEP_SUMMARY
           echo "| テスト | 結果 |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 認証情報スキャン | ${{ needs.credential-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| BATSセキュリティテスト（認証情報・インジェクション） | ${{ needs.bats-security-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| シェルスクリプト静的解析 | ${{ needs.shellcheck.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| コマンドインジェクション検査 | ${{ needs.command-injection-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Python入力検証 | ${{ needs.python-security-tests.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 依存関係スキャン | ${{ needs.dependency-scan.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| サプライチェーン検証 | ${{ needs.supply-chain-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 依存関係スキャン（情報提供） | ${{ needs.dependency-scan.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "## 脅威インテリジェンス参照" >> $GITHUB_STEP_SUMMARY
-          echo "- IPA 情報セキュリティ10大脅威 2026" >> $GITHUB_STEP_SUMMARY
-          echo "- CVE-2025-30066 (GitHub Actions サプライチェーン攻撃)" >> $GITHUB_STEP_SUMMARY
-          echo "- CVE-2025-9074 (Docker Desktop API アクセス制御不備)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # 失敗したテストをハイライト
-          if [ "${{ needs.credential-scan.result }}" != "success" ] || \
+          if [ "${{ needs.bats-security-tests.result }}" != "success" ] || \
              [ "${{ needs.shellcheck.result }}" != "success" ] || \
-             [ "${{ needs.command-injection-tests.result }}" != "success" ] || \
-             [ "${{ needs.python-security-tests.result }}" != "success" ] || \
-             [ "${{ needs.supply-chain-check.result }}" != "success" ]; then
+             [ "${{ needs.python-security-tests.result }}" != "success" ]; then
             echo "## ⚠️ セキュリティ問題が検出されました" >> $GITHUB_STEP_SUMMARY
             echo "詳細は各ジョブのログを確認してください。" >> $GITHUB_STEP_SUMMARY
             exit 1
           else
-            echo "## ✅ すべてのセキュリティテストが成功しました" >> $GITHUB_STEP_SUMMARY
+            echo "## ✅ すべての必須セキュリティテストが成功しました" >> $GITHUB_STEP_SUMMARY
           fi

@@ -7,12 +7,8 @@
 
 set -euo pipefail  # エラーハンドリング: エラー時終了、未定義変数でエラー、パイプエラーを伝播
 
-# カラー定義
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m' # No Color
+# 共通ライブラリの読み込み
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 # 定数定義
 readonly SCRIPT_NAME=$(basename "$0")
@@ -30,12 +26,12 @@ log() {
 print_color() {
     local color="$1"
     shift
-    echo -e "${color}$*${NC}"
+    echo -e "${color}$*${C_RESET}"
 }
 
 # エラーハンドリング関数
 error_exit() {
-    print_color "$RED" "エラー: $1" >&2
+    print_color "$C_RED" "エラー: $1" >&2
     log "ERROR" "$1"
     exit 1
 }

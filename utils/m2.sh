@@ -1,19 +1,13 @@
 m #!/bin/bash
+set -euo pipefail
 
 # ============================================
 #  🎤 M-1グランプリ2025 採点システム 🎤
 #     ～ 第21代王者決定戦 ～
 # ============================================
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+# 共通ライブラリの読み込み
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 # ========== 2025年版データ ==========
 
@@ -83,7 +77,7 @@ OUTPUT_DIR="./m1_2025_results"
 # ========== ユーティリティ ==========
 
 show_banner() {
-    echo -e "${MAGENTA}"
+    echo -e "${C_MAGENTA}"
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════════╗
 ║     ███╗   ███╗     ██╗     ██████╗  ██████╗  ██████╗ ███████╗║
@@ -97,11 +91,11 @@ show_banner() {
 ║            ～ 史上最多11,521組の頂点へ ～                     ║
 ╚═══════════════════════════════════════════════════════════════╝
 EOF
-    echo -e "${NC}"
+    echo -e "${C_RESET}"
 }
 
-separator() { echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
-double_sep() { echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"; }
+separator() { echo -e "${C_CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"; }
+double_sep() { echo -e "${C_YELLOW}═══════════════════════════════════════════════════════${C_RESET}"; }
 
 get_comment() {
     local s=$1 idx
@@ -121,9 +115,9 @@ score_combo() {
     
     echo ""
     separator
-    echo -e "${BOLD}${GREEN}🎭 ${combo}${NC}"
+    echo -e "${C_BOLD}${C_GREEN}🎭 ${combo}${C_RESET}"
     separator
-    echo -e "${BLUE}【9人の審査員による採点】${NC}"
+    echo -e "${C_BLUE}【9人の審査員による採点】${C_RESET}"
     
     for judge in "${JUDGES[@]}"; do
         local score
@@ -131,26 +125,26 @@ score_combo() {
             score=$((RANDOM % 21 + 80))
         else
             while true; do
-                echo -ne "  ${YELLOW}${judge}${NC} (80-100): "
+                echo -ne "  ${C_YELLOW}${judge}${C_RESET} (80-100): "
                 read -r score
                 [[ "$score" =~ ^[0-9]+$ ]] && [ "$score" -ge 80 ] && [ "$score" -le 100 ] && break
             done
         fi
         total=$((total + score))
         local comment; comment=$(get_comment "$score")
-        printf "  %-18s: ${CYAN}%3d点${NC} ${DIM}「%s」${NC}\n" "$judge" "$score" "$comment"
+        printf "  %-18s: ${C_CYAN}%3d点${C_RESET} ${C_DIM}「%s」${C_RESET}\n" "$judge" "$score" "$comment"
     done
     
     echo ""
-    echo -e "${MAGENTA}┌────────────────────────────────────┐${NC}"
-    echo -e "${MAGENTA}│ ${combo}${NC}"
-    echo -e "${MAGENTA}│ ${RED}★★★ 合計: ${total}点 ★★★${NC}"
-    echo -e "${MAGENTA}└────────────────────────────────────┘${NC}"
+    echo -e "${C_MAGENTA}┌────────────────────────────────────┐${C_RESET}"
+    echo -e "${C_MAGENTA}│ ${combo}${C_RESET}"
+    echo -e "${C_MAGENTA}│ ${C_RED}★★★ 合計: ${total}点 ★★★${C_RESET}"
+    echo -e "${C_MAGENTA}└────────────────────────────────────┘${C_RESET}"
     
     # 歴代比較
     for i in "${!CHAMPION_SCORES[@]}"; do
         if [ "$total" -gt "${CHAMPION_SCORES[$i]}" ]; then
-            echo -e "  ${GREEN}→ ${CHAMPION_NAMES[$i]}(${CHAMPION_SCORES[$i]}点)超え！${NC}"
+            echo -e "  ${C_GREEN}→ ${CHAMPION_NAMES[$i]}(${CHAMPION_SCORES[$i]}点)超え！${C_RESET}"
             break
         fi
     done
@@ -166,7 +160,7 @@ show_results() {
     
     echo ""
     double_sep
-    echo -e "${BOLD}${RED}🏆 M-1グランプリ2025 最終結果 🏆${NC}"
+    echo -e "${C_BOLD}${C_RED}🏆 M-1グランプリ2025 最終結果 🏆${C_RESET}"
     double_sep
     
     # ソート
@@ -177,9 +171,9 @@ show_results() {
     IFS=$'\n' sorted=($(sort -t: -k1 -nr <<<"${sorted[*]}")); unset IFS
     
     local medals=("🥇" "🥈" "🥉")
-    echo -e "${YELLOW}┌──────────────────────────────────────────┐${NC}"
-    echo -e "${YELLOW}│        第21代王者決定！順位表            │${NC}"
-    echo -e "${YELLOW}├──────────────────────────────────────────┤${NC}"
+    echo -e "${C_YELLOW}┌──────────────────────────────────────────┐${C_RESET}"
+    echo -e "${C_YELLOW}│        第21代王者決定！順位表            │${C_RESET}"
+    echo -e "${C_YELLOW}├──────────────────────────────────────────┤${C_RESET}"
     
     local rank=1
     for item in "${sorted[@]}"; do
@@ -187,27 +181,27 @@ show_results() {
         local nm="${item#*:}"
         local icon="  "
         [ $rank -le 3 ] && icon="${medals[$((rank-1))]}"
-        printf "${YELLOW}│${NC} %s %2d位: %-14s ${CYAN}%d点${NC} ${YELLOW}│${NC}\n" "$icon" "$rank" "$nm" "$sc"
+        printf "${C_YELLOW}│${C_RESET} %s %2d位: %-14s ${C_CYAN}%d点${C_RESET} ${C_YELLOW}│${C_RESET}\n" "$icon" "$rank" "$nm" "$sc"
         ((rank++))
     done
-    echo -e "${YELLOW}└──────────────────────────────────────────┘${NC}"
+    echo -e "${C_YELLOW}└──────────────────────────────────────────┘${C_RESET}"
     
     # 優勝者
     local winner="${sorted[0]#*:}"
     local wscore="${sorted[0]%%:*}"
     echo ""
-    echo -e "${RED}🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉${NC}"
+    echo -e "${C_RED}🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉${C_RESET}"
     echo ""
-    echo -e "${MAGENTA}   👑 第21代 M-1チャンピオン 👑${NC}"
+    echo -e "${C_MAGENTA}   👑 第21代 M-1チャンピオン 👑${C_RESET}"
     echo ""
-    echo -e "${BOLD}${GREEN}      ✨ ${winner} ✨${NC}"
-    echo -e "${CYAN}          ${wscore}点${NC}"
+    echo -e "${C_BOLD}${C_GREEN}      ✨ ${winner} ✨${C_RESET}"
+    echo -e "${C_CYAN}          ${wscore}点${C_RESET}"
     echo ""
-    echo -e "${RED}🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉${NC}"
+    echo -e "${C_RED}🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉${C_RESET}"
     
     # 歴代比較
     echo ""
-    echo -e "${YELLOW}【歴代チャンピオン比較】${NC}"
+    echo -e "${C_YELLOW}【歴代チャンピオン比較】${C_RESET}"
     echo "  今回: ${winner} ${wscore}点"
     for i in "${!CHAMPION_NAMES[@]}"; do
         echo "  ${CHAMPION_NAMES[$i]}: ${CHAMPION_SCORES[$i]}点"
@@ -221,7 +215,7 @@ show_stats() {
     local -n scores=$2
     
     echo ""
-    echo -e "${CYAN}📊 統計分析${NC}"
+    echo -e "${C_CYAN}📊 統計分析${C_RESET}"
     
     local max=0 min=900 sum=0
     for s in "${scores[@]}"; do
@@ -305,7 +299,7 @@ HTMLHEAD
 </body></html>
 JUDGES
     
-    echo -e "${GREEN}✓ 出力完了: ${OUTPUT_DIR}/${NC}"
+    echo -e "${C_GREEN}✓ 出力完了: ${OUTPUT_DIR}/${C_RESET}"
 }
 
 # ========== 1stラウンド ==========
@@ -317,8 +311,8 @@ run_first_round() {
     
     echo ""
     double_sep
-    echo -e "${BOLD}${RED}🎯 ファーストラウンド${NC}"
-    echo -e "${DIM}   笑神籤（えみくじ）で出番決定！${NC}"
+    echo -e "${C_BOLD}${C_RED}🎯 ファーストラウンド${C_RESET}"
+    echo -e "${C_DIM}   笑神籤（えみくじ）で出番決定！${C_RESET}"
     double_sep
     
     first_scores=()
@@ -336,7 +330,7 @@ run_first_round() {
     local order=1
     for combo in "${shuffled[@]}"; do
         echo ""
-        echo -e "${YELLOW}【${order}番手】${NC}"
+        echo -e "${C_YELLOW}【${order}番手】${C_RESET}"
         score_combo "$combo" "$mode"
         first_scores+=("$LAST_SCORE")
         ((order++))
@@ -344,7 +338,7 @@ run_first_round() {
     
     # 結果表示
     echo ""
-    echo -e "${YELLOW}【ファーストラウンド結果】${NC}"
+    echo -e "${C_YELLOW}【ファーストラウンド結果】${C_RESET}"
     local sorted=()
     for i in "${!shuffled[@]}"; do sorted+=("${first_scores[$i]}:$i:${shuffled[$i]}"); done
     IFS=$'\n' sorted=($(sort -t: -k1 -nr <<<"${sorted[*]}")); unset IFS
@@ -355,11 +349,11 @@ run_first_round() {
     for item in "${sorted[@]}"; do
         IFS=':' read -r sc idx nm <<< "$item"
         if [ $r -le 3 ]; then
-            echo -e "  ${GREEN}${r}位: ${nm} (${sc}点) → 最終決戦へ！${NC}"
+            echo -e "  ${C_GREEN}${r}位: ${nm} (${sc}点) → 最終決戦へ！${C_RESET}"
             FINALIST_IDX+=("$idx")
             FINALIST_NAMES_FINAL+=("$nm")
         else
-            echo -e "  ${DIM}${r}位: ${nm} (${sc}点)${NC}"
+            echo -e "  ${C_DIM}${r}位: ${nm} (${sc}点)${C_RESET}"
         fi
         ((r++))
     done
@@ -375,8 +369,8 @@ run_final_battle() {
     
     echo ""
     double_sep
-    echo -e "${BOLD}${RED}🔥 最終決戦 🔥${NC}"
-    echo -e "${DIM}   上位3組による頂上決戦！${NC}"
+    echo -e "${C_BOLD}${C_RED}🔥 最終決戦 🔥${C_RESET}"
+    echo -e "${C_DIM}   上位3組による頂上決戦！${C_RESET}"
     double_sep
     
     FINAL_NAMES=()
@@ -394,12 +388,12 @@ run_final_battle() {
 run_haisha_fukkatsu() {
     echo ""
     double_sep
-    echo -e "${BOLD}${MAGENTA}🔥 敗者復活戦 🔥${NC}"
-    echo -e "${DIM}   21組が最後の1枠を争う！${NC}"
+    echo -e "${C_BOLD}${C_MAGENTA}🔥 敗者復活戦 🔥${C_RESET}"
+    echo -e "${C_DIM}   21組が最後の1枠を争う！${C_RESET}"
     double_sep
     
     echo ""
-    echo -e "${CYAN}【敗者復活戦 出場者】${NC}"
+    echo -e "${C_CYAN}【敗者復活戦 出場者】${C_RESET}"
     local col=0
     for combo in "${HAISHA_2025[@]}"; do
         printf "  %-14s" "$combo"
@@ -409,7 +403,7 @@ run_haisha_fukkatsu() {
     echo ""
     
     echo ""
-    echo -e "${YELLOW}🗳️  会場投票集計中...${NC}"
+    echo -e "${C_YELLOW}🗳️  会場投票集計中...${C_RESET}"
     sleep 2
     
     # ランダムで勝者決定
@@ -417,7 +411,7 @@ run_haisha_fukkatsu() {
     local winner="${HAISHA_2025[$winner_idx]}"
     
     echo ""
-    echo -e "${GREEN}🎉 敗者復活: ${BOLD}${winner}${NC}${GREEN} が決勝進出！${NC}"
+    echo -e "${C_GREEN}🎉 敗者復活: ${C_BOLD}${winner}${C_RESET}${C_GREEN} が決勝進出！${C_RESET}"
     
     HAISHA_WINNER="$winner"
 }
@@ -429,14 +423,14 @@ main() {
     
     while true; do
         echo ""
-        echo -e "${CYAN}【モード選択】${NC}"
+        echo -e "${C_CYAN}【モード選択】${C_RESET}"
         echo "  1) 🎯 本番形式（1st→最終決戦）"
         echo "  2) 🔥 敗者復活戦付き完全版"
         echo "  3) 🎲 クイックデモ（全10組一斉採点）"
         echo "  4) ✏️  手動採点モード"
         echo "  5) 📋 2025出場者一覧を表示"
         echo "  0) 終了"
-        echo -ne "${YELLOW}選択: ${NC}"
+        echo -ne "${C_YELLOW}選択: ${C_RESET}"
         read -r choice
         
         case "$choice" in
@@ -471,7 +465,7 @@ main() {
                 RESULT_SCORES=()
                 echo ""
                 double_sep
-                echo -e "${BOLD}${GREEN}🎲 クイックデモ - 全10組一斉採点${NC}"
+                echo -e "${C_BOLD}${C_GREEN}🎲 クイックデモ - 全10組一斉採点${C_RESET}"
                 double_sep
                 
                 for combo in "${FINALISTS_2025[@]}"; do
@@ -487,7 +481,7 @@ main() {
                 RESULT_NAMES=()
                 RESULT_SCORES=()
                 echo ""
-                echo -e "${CYAN}手動採点する組数 (1-10): ${NC}"
+                echo -e "${C_CYAN}手動採点する組数 (1-10): ${C_RESET}"
                 read -r count
                 [ -z "$count" ] && count=3
                 
@@ -501,20 +495,20 @@ main() {
             5)
                 echo ""
                 double_sep
-                echo -e "${BOLD}${CYAN}📋 M-1グランプリ2025 出場者一覧${NC}"
+                echo -e "${C_BOLD}${C_CYAN}📋 M-1グランプリ2025 出場者一覧${C_RESET}"
                 double_sep
                 echo ""
-                echo -e "${YELLOW}【決勝進出者 10組】${NC}"
+                echo -e "${C_YELLOW}【決勝進出者 10組】${C_RESET}"
                 for i in "${!FINALISTS_2025[@]}"; do
                     printf "  %2d. %s\n" $((i+1)) "${FINALISTS_2025[$i]}"
                 done
                 echo ""
-                echo -e "${YELLOW}【審査員 9名】${NC}"
+                echo -e "${C_YELLOW}【審査員 9名】${C_RESET}"
                 for judge in "${JUDGES[@]}"; do
                     echo "  ・$judge"
                 done
                 echo ""
-                echo -e "${YELLOW}【敗者復活戦 21組】${NC}"
+                echo -e "${C_YELLOW}【敗者復活戦 21組】${C_RESET}"
                 local col=0
                 for combo in "${HAISHA_2025[@]}"; do
                     printf "  %-14s" "$combo"
@@ -524,13 +518,13 @@ main() {
                 echo ""
                 ;;
             0)
-                echo -e "${CYAN}ご視聴ありがとうございました！${NC}"
+                echo -e "${C_CYAN}ご視聴ありがとうございました！${C_RESET}"
                 exit 0
                 ;;
         esac
         
         echo ""
-        echo -ne "${YELLOW}続ける？(y/n): ${NC}"
+        echo -ne "${C_YELLOW}続ける？(y/n): ${C_RESET}"
         read -r cont
         [ "$cont" != "y" ] && exit 0
     done

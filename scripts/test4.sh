@@ -1,18 +1,15 @@
 #!/bin/bash
+set -euo pipefail
 
 # 問題表示・解答スクリプト
 # 生成した問題を表示し、ユーザーからの解答を受け付けます
 
-# 色の設定
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# 共通ライブラリの読み込み
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 # 問題ディレクトリの確認
 if [ ! -d "generated_quiz" ]; then
-    echo -e "${RED}問題ファイルが見つかりません。先に問題生成スクリプトを実行してください。${NC}"
+    echo -e "${C_RED}問題ファイルが見つかりません。先に問題生成スクリプトを実行してください。${C_RESET}"
     exit 1
 fi
 
@@ -36,9 +33,9 @@ display_and_answer() {
     local explanation=$(sed -n '/解説:/,$p' "$question_file" | sed '1d')
     
     # 問題の表示
-    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}問題ID: ${id}${NC} (${category})"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    echo -e "\n${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_BLUE}問題ID: ${id}${C_RESET} (${category})"
+    echo -e "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
     echo -e "$question\n"
     echo -e "$options\n"
     
@@ -52,15 +49,15 @@ display_and_answer() {
     # 解答の判定
     TOTAL=$((TOTAL + 1))
     if [ "$user_answer" == "$answer" ]; then
-        echo -e "\n${GREEN}正解です！${NC} ✓"
+        echo -e "\n${C_GREEN}正解です！${C_RESET} ✓"
         SCORE=$((SCORE + 1))
     else
-        echo -e "\n${RED}不正解です。${NC} ✗"
-        echo -e "正解は ${GREEN}${answer}${NC} です。"
+        echo -e "\n${C_RED}不正解です。${C_RESET} ✗"
+        echo -e "正解は ${C_GREEN}${answer}${C_RESET} です。"
     fi
     
     # 解説の表示
-    echo -e "\n${BLUE}【解説】${NC}"
+    echo -e "\n${C_BLUE}【解説】${C_RESET}"
     echo -e "$explanation\n"
     
     # 続行の確認
@@ -76,7 +73,7 @@ display_and_answer() {
 
 # カテゴリ選択
 select_category() {
-    echo -e "\n${YELLOW}問題カテゴリを選択してください：${NC}"
+    echo -e "\n${C_YELLOW}問題カテゴリを選択してください：${C_RESET}"
     echo "0. 全てのカテゴリ"
     for i in "${!CATEGORIES[@]}"; do
         echo "$((i+1)). ${CATEGORIES[$i]}"
@@ -90,16 +87,16 @@ select_category() {
     elif [ "$category_selection" -ge 1 ] && [ "$category_selection" -le 6 ]; then
         return $category_selection
     else
-        echo -e "${RED}無効な選択です。全てのカテゴリから出題します。${NC}"
+        echo -e "${C_RED}無効な選択です。全てのカテゴリから出題します。${C_RESET}"
         return 0
     fi
 }
 
 # メイン実行機能
 main() {
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}日本語問題演習システム${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    echo -e "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_BLUE}日本語問題演習システム${C_RESET}"
+    echo -e "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
     
     # カテゴリ選択
     select_category
@@ -119,7 +116,7 @@ main() {
     
     # 問題がない場合
     if [ ${#question_files[@]} -eq 0 ]; then
-        echo -e "${RED}選択されたカテゴリには問題がありません。${NC}"
+        echo -e "${C_RED}選択されたカテゴリには問題がありません。${C_RESET}"
         exit 1
     fi
     
@@ -130,7 +127,7 @@ main() {
     
     if [ -z "$num_questions" ] || ! [[ "$num_questions" =~ ^[0-9]+$ ]] || [ "$num_questions" -gt "${#question_files[@]}" ]; then
         num_questions=${#question_files[@]}
-        echo -e "${YELLOW}全ての問題（${num_questions}問）を出題します。${NC}"
+        echo -e "${C_YELLOW}全ての問題（${num_questions}問）を出題します。${C_RESET}"
     fi
     
     # 問題をランダムに選択
@@ -162,21 +159,21 @@ main() {
     done
     
     # 結果表示
-    echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}演習結果${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-    echo -e "正解数: ${GREEN}${SCORE}${NC} / ${TOTAL}"
-    echo -e "正答率: ${GREEN}$(( (SCORE * 100) / TOTAL ))%${NC}\n"
+    echo -e "\n${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_BLUE}演習結果${C_RESET}"
+    echo -e "${C_YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
+    echo -e "正解数: ${C_GREEN}${SCORE}${C_RESET} / ${TOTAL}"
+    echo -e "正答率: ${C_GREEN}$(( (SCORE * 100) / TOTAL ))%${C_RESET}\n"
     
     # スコアに基づくフィードバック
     if [ $SCORE -eq $TOTAL ]; then
-        echo -e "${GREEN}素晴らしい！満点です！${NC}"
+        echo -e "${C_GREEN}素晴らしい！満点です！${C_RESET}"
     elif [ $SCORE -ge $(( TOTAL * 8 / 10 )) ]; then
-        echo -e "${GREEN}よくできました！${NC}"
+        echo -e "${C_GREEN}よくできました！${C_RESET}"
     elif [ $SCORE -ge $(( TOTAL * 6 / 10 )) ]; then
-        echo -e "${YELLOW}まずまずの成績です。もう少し頑張りましょう！${NC}"
+        echo -e "${C_YELLOW}まずまずの成績です。もう少し頑張りましょう！${C_RESET}"
     else
-        echo -e "${RED}もっと練習が必要です。頑張りましょう！${NC}"
+        echo -e "${C_RED}もっと練習が必要です。頑張りましょう！${C_RESET}"
     fi
 }
 

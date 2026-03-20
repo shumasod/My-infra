@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Define the ASCII art frames for a Frozen-themed animation
 frame1=(

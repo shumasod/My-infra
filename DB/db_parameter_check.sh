@@ -334,3 +334,195 @@ analyze_mysql() {
         add_result "Max_used_connections (実績)" "$max_used" "max_connections の 80% 以下" "$status" "$comment"
     fi
 }
+
+# ===== PostgreSQL 接続・パラメータ取得 =====
+
+pg_get_var() {
+    local var_name="$1"
+    local port_opt=""
+    [[ -n "$db_port" ]] && port_opt="-p ${db_port}"
+    local db_opt="${db_name:-postgres}"
+
+    PGPASSWORD="${db_pass}" psql \
+        -h "${db_host}" \
+        ${port_opt} \
+        -U "${db_user}" \
+        -d "${db_opt}" \
+        -t -A \
+        -c "SHOW ${var_name};" \
+        2>/dev/null | tr -d ' '
+}
+
+pg_check_connection() {
+    local port_opt=""
+    [[ -n "$db_port" ]] && port_opt="-p ${db_port}"
+    local db_opt="${db_name:-postgres}"
+
+    PGPASSWORD="${db_pass}" psql \
+        -h "${db_host}" \
+        ${port_opt} \
+        -U "${db_user}" \
+        -d "${db_opt}" \
+        -t -A \
+        -c "SELECT version();" \
+        2>/dev/null | head -1
+}
+
+# PostgreSQL の設定値をバイトに正規化（8MB, 512kB, 16384 等）
+pg_to_bytes() {
+    local val="$1"
+    if   [[ "$val" =~ ^([0-9]+)GB$ ]]; then echo $(( ${BASH_REMATCH[1]} * 1073741824 ))
+    elif [[ "$val" =~ ^([0-9]+)MB$ ]]; then echo $(( ${BASH_REMATCH[1]} * 1048576 ))
+    elif [[ "$val" =~ ^([0-9]+)kB$ ]]; then echo $(( ${BASH_REMATCH[1]} * 1024 ))
+    elif [[ "$val" =~ ^([0-9]+)$  ]]; then echo "${BASH_REMATCH[1]}"
+    else echo 0
+    fi
+}
+
+# ===== PostgreSQL パラメータ評価 =====
+
+analyze_postgresql() {
+    log_info "PostgreSQL パラメータを取得・評価中..."
+
+    local version
+    version=$(pg_check_connection) || {
+        log_error "PostgreSQL に接続できませんでした"
+        return 1
+    }
+    log_success "接続成功: ${version:0:60}"
+    echo ""
+
+    local current_val current_bytes rec_bytes status comment
+
+    # ---- shared_buffers ----
+    rec_bytes=$(mb_to_bytes $(( total_ram_mb / 4 )))
+    current_val=$(pg_get_var "shared_buffers")
+    current_bytes=$(pg_to_bytes "$current_val")
+    local lower=$(( rec_bytes * 50 / 100 ))
+    local upper=$(( rec_bytes * 200 / 100 ))
+    if   (( current_bytes >= lower && current_bytes <= upper )); then
+        status="$STATUS_OK";   comment="RAM の$(( current_bytes * 100 / (total_ram_mb * 1048576) ))% (推奨 25%)"
+    elif (( current_bytes < lower )); then
+        status="$STATUS_WARN"; comment="小さすぎます。RAM の 25% を推奨"
+    else
+        status="$STATUS_WARN"; comment="大きすぎる可能性 (上限目安: RAM の 40%)"
+    fi
+    add_result "shared_buffers" "$(human_readable "$current_bytes")" "$(human_readable "$rec_bytes") (RAM÷4)" "$status" "$comment"
+
+    # ---- effective_cache_size ----
+    rec_bytes=$(mb_to_bytes $(( total_ram_mb * 3 / 4 )))
+    current_val=$(pg_get_var "effective_cache_size")
+    current_bytes=$(pg_to_bytes "$current_val")
+    if   (( current_bytes >= rec_bytes * 50 / 100 )); then
+        status="$STATUS_OK";   comment="プランナー最適化に十分な値"
+    else
+        status="$STATUS_WARN"; comment="RAM の 75% を推奨"
+    fi
+    add_result "effective_cache_size" "$(human_readable "$current_bytes")" "$(human_readable "$rec_bytes") (RAM×75%)" "$status" "$comment"
+
+    # ---- work_mem ----
+    local pg_max_conn
+    pg_max_conn=$(pg_get_var "max_connections")
+    local conn_int="${pg_max_conn:-100}"
+    local rec_work=$(( total_ram_mb * 1048576 / (conn_int * 2) ))
+    (( rec_work < 4194304  )) && rec_work=4194304
+    (( rec_work > 67108864 )) && rec_work=67108864
+    current_val=$(pg_get_var "work_mem")
+    current_bytes=$(pg_to_bytes "$current_val")
+    if   (( current_bytes >= 4194304 && current_bytes <= 67108864 )); then
+        status="$STATUS_OK";   comment="適切な範囲 (複雑なクエリが多い場合は増加を検討)"
+    elif (( current_bytes < 4194304 )); then
+        status="$STATUS_WARN"; comment="小さすぎます。最低 4MB を推奨"
+    else
+        status="$STATUS_WARN"; comment="大きすぎる可能性 (OOMリスク)"
+    fi
+    add_result "work_mem" "$(human_readable "$current_bytes")" "$(human_readable "$rec_work")" "$status" "$comment"
+
+    # ---- maintenance_work_mem ----
+    rec_bytes=$(mb_to_bytes $(( total_ram_mb * 5 / 100 )))
+    (( rec_bytes > 1073741824 )) && rec_bytes=1073741824
+    current_val=$(pg_get_var "maintenance_work_mem")
+    current_bytes=$(pg_to_bytes "$current_val")
+    if   (( current_bytes >= rec_bytes * 50 / 100 && current_bytes <= 1073741824 )); then
+        status="$STATUS_OK";   comment="VACUUM/INDEX作成に適切"
+    else
+        status="$STATUS_WARN"; comment="$(human_readable "$rec_bytes") を推奨"
+    fi
+    add_result "maintenance_work_mem" "$(human_readable "$current_bytes")" "$(human_readable "$rec_bytes") (RAM×5%)" "$status" "$comment"
+
+    # ---- max_connections ----
+    current_val="$pg_max_conn"
+    local conn_val="${current_val:-100}"
+    if   (( conn_val >= 50 && conn_val <= 500 )); then
+        status="$STATUS_OK";   comment="適切な範囲（接続プーリング併用を推奨）"
+    elif (( conn_val > 500 )); then
+        status="$STATUS_WARN"; comment="多すぎる可能性。PgBouncer等プーリング推奨"
+    else
+        status="$STATUS_WARN"; comment="少なすぎる可能性"
+    fi
+    add_result "max_connections" "$conn_val" "100〜200 (プーリング併用)" "$status" "$comment"
+
+    # ---- wal_buffers ----
+    rec_bytes=$(mb_to_bytes 16)
+    current_val=$(pg_get_var "wal_buffers")
+    current_bytes=$(pg_to_bytes "$current_val")
+    if   (( current_bytes >= mb_to_bytes 8 )); then
+        status="$STATUS_OK";   comment="WAL書き込み効率は十分"
+    else
+        status="$STATUS_WARN"; comment="16MB を推奨"
+    fi
+    add_result "wal_buffers" "$(human_readable "$current_bytes")" "16MB" "$status" "$comment"
+
+    # ---- checkpoint_completion_target ----
+    current_val=$(pg_get_var "checkpoint_completion_target")
+    if   (( $(echo "${current_val:-0} >= 0.7" | bc -l) )); then
+        status="$STATUS_OK";   comment="I/Oスパイク抑制に効果的"
+    else
+        status="$STATUS_WARN"; comment="0.9 に設定を推奨"
+    fi
+    add_result "checkpoint_completion_target" "${current_val:--}" "0.9" "$status" "$comment"
+
+    # ---- random_page_cost ----
+    current_val=$(pg_get_var "random_page_cost")
+    if   (( $(echo "${current_val:-4} <= 2.0" | bc -l) )); then
+        status="$STATUS_INFO"; comment="SSD向け設定"
+    elif (( $(echo "${current_val:-4} == 4.0" | bc -l) )); then
+        status="$STATUS_INFO"; comment="HDD向けデフォルト値 (SSDなら 1.1〜2.0 を推奨)"
+    else
+        status="$STATUS_INFO"; comment="カスタム設定"
+    fi
+    add_result "random_page_cost" "${current_val:--}" "SSD:1.1 / HDD:4.0" "$status" "$comment"
+
+    # ---- log_min_duration_statement ----
+    current_val=$(pg_get_var "log_min_duration_statement")
+    local lmds="${current_val:--1}"
+    if   [[ "$lmds" == "-1" ]]; then
+        status="$STATUS_WARN"; comment="スロークエリログが無効。1000ms を推奨"
+    elif (( lmds <= 1000 )); then
+        status="$STATUS_OK";   comment="スロークエリを適切に記録"
+    else
+        status="$STATUS_WARN"; comment="しきい値が高すぎます。1000ms 以下を推奨"
+    fi
+    add_result "log_min_duration_statement" "${lmds}ms" "1000ms 以下" "$status" "$comment"
+
+    # ---- autovacuum ----
+    current_val=$(pg_get_var "autovacuum")
+    if [[ "${current_val,,}" == "on" ]]; then
+        status="$STATUS_OK";   comment="テーブル統計とデッドタプル自動清掃が有効"
+    else
+        status="$STATUS_CRIT"; comment="無効は重大なリスク。有効化を強く推奨"
+    fi
+    add_result "autovacuum" "${current_val:--}" "on" "$status" "$comment"
+
+    # ---- default_statistics_target ----
+    current_val=$(pg_get_var "default_statistics_target")
+    current_int="${current_val:-100}"
+    if   (( current_int >= 100 && current_int <= 500 )); then
+        status="$STATUS_OK";   comment="適切な統計サンプル数"
+    elif (( current_int < 100 )); then
+        status="$STATUS_WARN"; comment="プランナー精度が低下する可能性。100以上を推奨"
+    else
+        status="$STATUS_INFO"; comment="高精度統計（解析用途向け）"
+    fi
+    add_result "default_statistics_target" "$current_int" "100〜500" "$status" "$comment"
+}

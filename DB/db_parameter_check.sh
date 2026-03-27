@@ -526,3 +526,181 @@ analyze_postgresql() {
     fi
     add_result "default_statistics_target" "$current_int" "100〜500" "$status" "$comment"
 }
+
+# ===== 結果出力 =====
+
+print_table() {
+    local sep="+"
+    local header_line
+    sep+="$(printf '%-30s' '' | tr ' ' '-')+"
+    sep+="$(printf '%-14s' '' | tr ' ' '-')+"
+    sep+="$(printf '%-28s' '' | tr ' ' '-')+"
+    sep+="$(printf '%-8s'  '' | tr ' ' '-')+"
+    sep+="$(printf '%-45s' '' | tr ' ' '-')+"
+
+    echo ""
+    echo -e "${C_BOLD}${C_CYAN}${sep}${C_RESET}"
+    printf "${C_BOLD}| %-28s | %-12s | %-26s | %-6s | %-43s |${C_RESET}\n" \
+        "パラメータ名" "現在値" "推奨値" "状態" "コメント"
+    echo -e "${C_BOLD}${C_CYAN}${sep}${C_RESET}"
+
+    local ok_count=0 warn_count=0 crit_count=0 info_count=0
+
+    for row in "${result_rows[@]}"; do
+        IFS='||' read -r param current recommended status comment <<< "$row"
+        local status_disp
+        case "$status" in
+            "$STATUS_OK")   status_disp="${C_GREEN}${STATUS_OK}  ${C_RESET}"; (( ok_count++   )) ;;
+            "$STATUS_WARN") status_disp="${C_YELLOW}${STATUS_WARN}${C_RESET}"; (( warn_count++ )) ;;
+            "$STATUS_CRIT") status_disp="${C_RED}${STATUS_CRIT}${C_RESET}";   (( crit_count++ )) ;;
+            *)              status_disp="${C_CYAN}${STATUS_INFO}${C_RESET}";  (( info_count++ )) ;;
+        esac
+        printf "| %-28s | %-12s | %-26s | %b | %-43s |\n" \
+            "${param:0:28}" "${current:0:12}" "${recommended:0:26}" "$status_disp" "${comment:0:43}"
+    done
+
+    echo -e "${C_BOLD}${C_CYAN}${sep}${C_RESET}"
+    echo ""
+    echo -e "集計: ${C_GREEN}OK: ${ok_count}${C_RESET}  ${C_YELLOW}WARN: ${warn_count}${C_RESET}  ${C_RED}CRIT: ${crit_count}${C_RESET}  ${C_CYAN}INFO: ${info_count}${C_RESET}"
+    echo ""
+}
+
+print_csv() {
+    echo "パラメータ名,現在値,推奨値,状態,コメント"
+    for row in "${result_rows[@]}"; do
+        IFS='||' read -r param current recommended status comment <<< "$row"
+        printf '"%s","%s","%s","%s","%s"\n' \
+            "$param" "$current" "$recommended" "$status" "$comment"
+    done
+}
+
+print_json() {
+    echo "["
+    local total="${#result_rows[@]}"
+    local i=0
+    for row in "${result_rows[@]}"; do
+        IFS='||' read -r param current recommended status comment <<< "$row"
+        (( i++ ))
+        local comma=","
+        (( i == total )) && comma=""
+        printf '  {"parameter":"%s","current":"%s","recommended":"%s","status":"%s","comment":"%s"}%s\n' \
+            "$param" "$current" "$recommended" "$status" "$comment" "$comma"
+    done
+    echo "]"
+}
+
+output_results() {
+    local output=""
+    case "$output_format" in
+        csv)  output=$(print_csv) ;;
+        json) output=$(print_json) ;;
+        *)    print_table; return ;;
+    esac
+
+    if [[ -n "$report_file" ]]; then
+        echo "$output" > "$report_file"
+        log_success "結果を保存しました: $report_file"
+    else
+        echo "$output"
+    fi
+}
+
+# ===== 引数解析 =====
+
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                show_usage; exit 0 ;;
+            -v|--version)
+                show_version; exit 0 ;;
+            -t|--type)
+                [[ $# -lt 2 ]] && error_exit "--type には mysql または postgresql を指定してください"
+                db_type="$2"; shift 2 ;;
+            -H|--host)
+                [[ $# -lt 2 ]] && error_exit "--host には値が必要です"
+                db_host="$2"; shift 2 ;;
+            -P|--port)
+                [[ $# -lt 2 ]] && error_exit "--port には値が必要です"
+                db_port="$2"; shift 2 ;;
+            -u|--user)
+                [[ $# -lt 2 ]] && error_exit "--user には値が必要です"
+                db_user="$2"; shift 2 ;;
+            -p|--pass)
+                [[ $# -lt 2 ]] && error_exit "--pass には値が必要です"
+                db_pass="$2"; shift 2 ;;
+            -d|--database)
+                [[ $# -lt 2 ]] && error_exit "--database には値が必要です"
+                db_name="$2"; shift 2 ;;
+            -f|--format)
+                [[ $# -lt 2 ]] && error_exit "--format には table / csv / json を指定してください"
+                output_format="$2"; shift 2 ;;
+            -o|--output)
+                [[ $# -lt 2 ]] && error_exit "--output には値が必要です"
+                report_file="$2"; shift 2 ;;
+            --verbose)
+                verbose=1; shift ;;
+            -*)
+                error_exit "不明なオプション: $1" ;;
+            *)
+                error_exit "予期しない引数: $1" ;;
+        esac
+    done
+
+    # DB種別の検証
+    case "$db_type" in
+        mysql|postgresql) ;;
+        *) error_exit "DB種別は mysql または postgresql を指定してください" ;;
+    esac
+
+    # デフォルトユーザー設定
+    if [[ "$db_type" == "postgresql" && "$db_user" == "root" ]]; then
+        db_user="postgres"
+    fi
+
+    # デフォルトポート設定
+    if [[ -z "$db_port" ]]; then
+        [[ "$db_type" == "mysql" ]] && db_port="3306" || db_port="5432"
+    fi
+}
+
+# ===== メイン処理 =====
+
+main() {
+    parse_arguments "$@"
+
+    echo ""
+    echo -e "${C_BOLD}${C_CYAN}================================================================${C_RESET}"
+    echo -e "${C_BOLD}${C_CYAN}   DB パラメータ適正値調査ツール v${VERSION}${C_RESET}"
+    echo -e "${C_BOLD}${C_CYAN}================================================================${C_RESET}"
+    echo -e "  対象DB  : ${C_YELLOW}${db_type}${C_RESET}"
+    echo -e "  接続先  : ${C_YELLOW}${db_host}:${db_port}${C_RESET}"
+    echo -e "  ユーザー: ${C_YELLOW}${db_user}${C_RESET}"
+    echo -e "  出力形式: ${C_YELLOW}${output_format}${C_RESET}"
+    echo -e "${C_BOLD}${C_CYAN}================================================================${C_RESET}"
+    echo ""
+
+    get_system_resources
+
+    case "$db_type" in
+        mysql)      analyze_mysql      ;;
+        postgresql) analyze_postgresql ;;
+    esac
+
+    # table形式は print_table で既に出力済み、それ以外は output_results で処理
+    if [[ "$output_format" != "table" ]]; then
+        output_results
+    else
+        print_table
+        if [[ -n "$report_file" ]]; then
+            print_csv > "$report_file"
+            log_success "CSVレポートを保存しました: $report_file"
+        fi
+    fi
+
+    echo -e "${C_DIM}凡例: ${C_GREEN}OK${C_RESET}=適正値 ${C_YELLOW}WARN${C_RESET}=要確認 ${C_RED}CRIT${C_RESET}=要対処 ${C_CYAN}INFO${C_RESET}=情報${C_DIM}${C_RESET}"
+    echo ""
+}
+
+# スクリプト実行
+main "$@"

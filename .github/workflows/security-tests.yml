@@ -241,6 +241,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+    # jobレベルで設定することでステップの if: 条件から参照できる
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
       - name: 失敗ジョブの特定
@@ -297,30 +300,13 @@ jobs:
 
       # --- Slack通知（SLACK_WEBHOOK_URL シークレット設定時のみ実行） ---
       - name: Slack通知
-        if: env.SLACK_WEBHOOK_URL != ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -s -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-type: application/json' \
-            -d "{
-              \"text\": \"🚨 *セキュリティテスト失敗*\",
-              \"attachments\": [{
-                \"color\": \"danger\",
-                \"fields\": [
-                  {\"title\": \"失敗ジョブ\", \"value\": \"${{ steps.check.outputs.failed }}\", \"short\": false},
-                  {\"title\": \"ブランチ\",   \"value\": \"\`${{ github.ref_name }}\`\",            \"short\": true},
-                  {\"title\": \"コミット\",   \"value\": \"\`${GITHUB_SHA:0:7}\`\",                \"short\": true}
-                ],
-                \"actions\": [{\"type\": \"button\", \"text\": \"ログを確認\", \"url\": \"${RUN_URL}\"}]
-              }]
-            }" && echo "Slack通知を送信しました" || echo "⚠️ Slack通知の送信に失敗しました"
-
-      - name: Slack未設定時の案内
-        if: env.SLACK_WEBHOOK_URL == ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          echo "💡 Slack通知を有効にする場合は SLACK_WEBHOOK_URL シークレットを追加してください"
-          echo "   設定: Repository Settings > Secrets and variables > Actions > New repository secret"
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            PAYLOAD=$(printf '{"text":"🚨 *セキュリティテスト失敗*","attachments":[{"color":"danger","text":"失敗ジョブ: %s\\nブランチ: `%s` / コミット: `%s`\\n<%s|ログを確認>"}]}' \
+              "${{ steps.check.outputs.failed }}" "${{ github.ref_name }}" "${GITHUB_SHA:0:7}" "${RUN_URL}")
+            curl -s -X POST "$SLACK_WEBHOOK_URL" -H 'Content-type: application/json' -d "$PAYLOAD" \
+              && echo "Slack通知を送信しました" || echo "⚠️ Slack通知の送信に失敗しました"
+          else
+            echo "💡 Slack通知を有効にする場合は SLACK_WEBHOOK_URL シークレットを追加してください"
+          fi

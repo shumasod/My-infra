@@ -8,6 +8,15 @@ set -euo pipefail
 #
 # 久保田利伸の名曲の歌詞フレーズをランダムに表示します
 #
+# 使用方法:
+#   ./kubota_toshinobu.sh          # ランダムに1フレーズ表示
+#   ./kubota_toshinobu.sh -i       # インタラクティブモード（Enterで次へ）
+#   ./kubota_toshinobu.sh -a       # 全フレーズ一覧表示
+#   ./kubota_toshinobu.sh -h       # ヘルプ表示
+#
+
+# 共通ライブラリの読み込み
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 readonly PROG_NAME=$(basename "$0")
 readonly VERSION="1.0"
@@ -40,41 +49,126 @@ readonly -a SONGS=(
     "流星のサドル:2010:どんな夜も どんな朝も 二人一緒なら 怖くない"
 )
 
-# ===== ユーティリティ関数 =====
+# ===== ヘルパー関数 =====
 
-# 曲データを分解して表示
-parse_song() {
-    local entry="$1"
-    IFS=':' read -r title year lyrics <<< "$entry"
-    printf '%s\t%s\t%s' "$title" "$year" "$lyrics"
+show_usage() {
+    cat <<EOF
+使用方法: ${PROG_NAME} [オプション]
+
+久保田利伸の名曲歌詞フレーズをランダムに表示します。
+
+オプション:
+  -i, --interactive   インタラクティブモード（Enterで次のフレーズへ）
+  -a, --all           全フレーズを一覧表示
+  -h, --help          このヘルプを表示
+  -v, --version       バージョン情報を表示
+
+例:
+  ${PROG_NAME}          # ランダムに1フレーズ表示
+  ${PROG_NAME} -i       # 繰り返し表示モード
+  ${PROG_NAME} -a       # 全${#SONGS[@]}フレーズを一覧表示
+EOF
 }
 
-# ランダムに1曲選んで歌詞を返す
+# セパレーターを描画
+draw_sep() {
+    echo -e "${C_CYAN}♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪${C_RESET}"
+}
+
+# 1フレーズ表示
+show_phrase() {
+    local entry="$1"
+    local title year lyrics
+    IFS=':' read -r title year lyrics <<< "$entry"
+
+    echo ""
+    draw_sep
+    echo -e "  ${C_BOLD}${C_MAGENTA}久保田利伸${C_RESET}"
+    draw_sep
+    echo ""
+    echo -e "  ${C_YELLOW}♬ 「${title}」${C_RESET}  ${C_DIM}(${year})${C_RESET}"
+    echo ""
+    echo -e "  ${C_BRIGHT_CYAN}${lyrics}${C_RESET}"
+    echo ""
+    draw_sep
+    echo ""
+}
+
+# ランダムに1エントリ返す
 random_song() {
     local idx=$(( RANDOM % ${#SONGS[@]} ))
     echo "${SONGS[$idx]}"
 }
 
-# ===== メイン処理 =====
+# ===== モード別処理 =====
+
+mode_single() {
+    show_phrase "$(random_song)"
+}
+
+mode_interactive() {
+    local count=0
+    # シャッフル済みインデックス配列を作成
+    local -a indices=()
+    for i in "${!SONGS[@]}"; do indices+=("$i"); done
+    # Fisher-Yates シャッフル
+    for (( i=${#indices[@]}-1; i>0; i-- )); do
+        j=$(( RANDOM % (i+1) ))
+        tmp="${indices[$i]}"; indices[$i]="${indices[$j]}"; indices[$j]="$tmp"
+    done
+
+    echo -e "${C_DIM}  Enter で次のフレーズ / q で終了${C_RESET}"
+
+    for idx in "${indices[@]}"; do
+        show_phrase "${SONGS[$idx]}"
+        (( count++ ))
+        echo -e "  ${C_DIM}[${count}/${#SONGS[@]}] Enter で次へ / q で終了${C_RESET}"
+        IFS= read -r input || break
+        [[ "$input" == "q" || "$input" == "Q" ]] && break
+    done
+
+    echo -e "\n  ${C_GREEN}全フレーズを表示しました。ありがとうございました！${C_RESET}\n"
+}
+
+mode_all() {
+    echo ""
+    echo -e "${C_BOLD}${C_MAGENTA}  久保田利伸 歌詞フレーズ一覧 (全${#SONGS[@]}フレーズ)${C_RESET}"
+    echo ""
+    local prev_title=""
+    for entry in "${SONGS[@]}"; do
+        local title year lyrics
+        IFS=':' read -r title year lyrics <<< "$entry"
+        if [[ "$title" != "$prev_title" ]]; then
+            echo -e "${C_CYAN}  ┌─ ${C_YELLOW}${C_BOLD}「${title}」${C_RESET} ${C_DIM}(${year})${C_RESET}"
+            prev_title="$title"
+        fi
+        echo -e "${C_CYAN}  │${C_RESET}  ${lyrics}"
+    done
+    echo -e "${C_CYAN}  └────${C_RESET}"
+    echo ""
+}
+
+# ===== 引数解析 =====
 
 main() {
-    local entry
-    entry=$(random_song)
+    local mode="single"
 
-    local title year lyrics
-    IFS=':' read -r title year lyrics <<< "$entry"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -i|--interactive) mode="interactive" ;;
+            -a|--all)         mode="all" ;;
+            -h|--help)        show_usage; exit 0 ;;
+            -v|--version)     echo "${PROG_NAME} v${VERSION}"; exit 0 ;;
+            *) log_error "不明なオプション: $1"; show_usage; exit 1 ;;
+        esac
+        shift
+    done
 
-    echo ""
-    echo "♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪"
-    echo "  久保田利伸"
-    echo "♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪"
-    echo ""
-    echo "  曲名: 「${title}」 (${year})"
-    echo ""
-    echo "  ${lyrics}"
-    echo ""
-    echo "♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪"
-    echo ""
+    case "$mode" in
+        single)      mode_single ;;
+        interactive) mode_interactive ;;
+        all)         mode_all ;;
+    esac
 }
 
 main "$@"

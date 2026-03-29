@@ -121,18 +121,21 @@ player_turn() {
     echo -e "  ════════════════════════════════════${C_RESET}\n"
     sleep 0.5
 
+    show_hoop
+
     local i
     for (( i=1; i<=TOTAL_SHOTS; i++ )); do
         printf "  %2d本目 → Enter でシュート！ " "$i"
         read -r _
 
         if shoot; then
+            animate_shot "true"
             current_score=$(( current_score + 1 ))
-            printf "  ${C_GREEN}${C_BOLD}🎯 IN!   (${current_score}/${i})${C_RESET}\n"
+            echo -e "  ${C_GREEN}${C_BOLD}  ✅ ${current_score}本成功 / ${i}本目${C_RESET}"
         else
-            printf "  ${C_RED}✗ MISS  (${current_score}/${i})${C_RESET}\n"
+            animate_shot "false"
+            echo -e "  ${C_RED}  ❌ ${current_score}本成功 / ${i}本目${C_RESET}"
         fi
-        sleep 0.2
     done
 
     # グローバルスコアを更新
@@ -140,6 +143,118 @@ player_turn() {
 
     echo -e "\n  ${color}${C_BOLD}結果: ${current_score} / ${TOTAL_SHOTS} 本${C_RESET}"
     sleep 0.5
+}
+
+# ===== ASCII アート =====
+
+show_welcome() {
+    clear
+    echo -e "${C_BOLD}${C_YELLOW}"
+    cat <<'EOF'
+    ╔══════════════════════════════════════════════════════╗
+    ║                                                      ║
+    ║    🏀  バスケットフリースロー対決  🏀               ║
+    ║                                                      ║
+    ║         ___________                                  ║
+    ║        |           |                                 ║
+    ║     ---+-----------+---                              ║
+    ║        |___________|                                 ║
+    ║               |                                      ║
+    ║               |                                      ║
+    ║     ══════════|══════════                            ║
+    ║                                                      ║
+    ╚══════════════════════════════════════════════════════╝
+EOF
+    echo -e "${C_RESET}"
+    printf "  Enter でスタート！ "
+    read -r _
+}
+
+show_hoop() {
+    echo -e "  ${C_YELLOW}     ___________"
+    echo -e "     |           |"
+    echo -e "  ---+-----------+---"
+    echo -e "     |___________|"
+    echo -e "           |"
+    echo -e "  ══════════|══════════${C_RESET}"
+}
+
+# ボールのアニメーション（シュート前演出）
+animate_shot() {
+    local success="$1"
+    local frames=(
+        "🏀                    "
+        "  🏀                  "
+        "    🏀                "
+        "      🏀              "
+        "        🏀            "
+        "          🏀          "
+        "            🏀        "
+        "              🏀      "
+        "                🏀    "
+        "                  🏀  "
+    )
+
+    printf "\n"
+    for frame in "${frames[@]}"; do
+        printf "\r  %s" "$frame"
+        sleep 0.06
+    done
+
+    if [ "$success" = "true" ]; then
+        printf "\r  ${C_GREEN}${C_BOLD}                  🎯  ⭕  IN!!!${C_RESET}\n"
+    else
+        printf "\r  ${C_RED}${C_BOLD}                  💨  ✗   MISS...${C_RESET}\n"
+    fi
+    sleep 0.3
+}
+
+# ===== 結果画面 =====
+
+show_results() {
+    clear
+    echo -e "\n${C_BOLD}${C_YELLOW}"
+    echo -e "  ╔══════════════════════════════════════════╗"
+    echo -e "  ║         🏆  最終結果  🏆                ║"
+    echo -e "  ╚══════════════════════════════════════════╝${C_RESET}\n"
+
+    echo -e "  ${C_DIM}難易度: ${DIFFICULTY_LABEL}  /  ${TOTAL_SHOTS}本勝負${C_RESET}\n"
+
+    local p1_pct=$(( P1_SCORE * 100 / TOTAL_SHOTS ))
+    local p2_pct=$(( P2_SCORE * 100 / TOTAL_SHOTS ))
+
+    # 成功率バー（20文字幅）
+    local p1_bar_len=$(( P1_SCORE * 20 / TOTAL_SHOTS ))
+    local p2_bar_len=$(( P2_SCORE * 20 / TOTAL_SHOTS ))
+    local p1_bar=""
+    local p2_bar=""
+    for (( i=0; i<p1_bar_len; i++ ));   do p1_bar="${p1_bar}█"; done
+    for (( i=p1_bar_len; i<20; i++ )); do p1_bar="${p1_bar}░"; done
+    for (( i=0; i<p2_bar_len; i++ ));   do p2_bar="${p2_bar}█"; done
+    for (( i=p2_bar_len; i<20; i++ )); do p2_bar="${p2_bar}░"; done
+
+    printf "  ${C_CYAN}${C_BOLD}%-18s${C_RESET}  ${C_CYAN}%s${C_RESET}  %2d本 (%d%%)\n" \
+        "$P1_NAME" "$p1_bar" "$P1_SCORE" "$p1_pct"
+    printf "  ${C_MAGENTA}${C_BOLD}%-18s${C_RESET}  ${C_MAGENTA}%s${C_RESET}  %2d本 (%d%%)\n" \
+        "$P2_NAME" "$p2_bar" "$P2_SCORE" "$p2_pct"
+    echo ""
+
+    # 勝敗判定
+    if [ "$P1_SCORE" -gt "$P2_SCORE" ]; then
+        echo -e "  ${C_GREEN}${C_BOLD}🏆 優勝: ${P1_NAME}！おめでとう！${C_RESET}"
+    elif [ "$P2_SCORE" -gt "$P1_SCORE" ]; then
+        echo -e "  ${C_GREEN}${C_BOLD}🏆 優勝: ${P2_NAME}！おめでとう！${C_RESET}"
+    else
+        echo -e "  ${C_YELLOW}${C_BOLD}🤝 引き分け！ナイスゲーム！${C_RESET}"
+    fi
+    echo ""
+}
+
+# もう一度プレイするか確認
+ask_replay() {
+    printf "  もう一度プレイしますか？ [y/N]: "
+    read -r ans
+    [[ "${ans,,}" == "y" ]]
 }
 
 # ===== ゲームメインループ =====
@@ -151,9 +266,33 @@ run_game() {
     player_turn "$P1_NAME" "$C_CYAN"    "P1_SCORE"
 
     echo -e "\n${C_DIM}  ──────────── 交代 ────────────${C_RESET}"
-    printf "  Enter で %s のターン開始 " "$P2_NAME"
+    printf "  Enter で ${P2_NAME} のターン開始 "
     read -r _
 
     # プレイヤー2のターン
     player_turn "$P2_NAME" "$C_MAGENTA" "P2_SCORE"
 }
+
+# ===== メイン =====
+
+main() {
+    while true; do
+        # スコアリセット
+        P1_SCORE=0
+        P2_SCORE=0
+
+        show_welcome
+        setup_players
+        setup_difficulty
+        setup_shots
+
+        run_game
+        show_results
+
+        ask_replay || break
+    done
+
+    echo -e "\n  ${C_CYAN}またいつでも挑戦してください！🏀${C_RESET}\n"
+}
+
+main "$@"

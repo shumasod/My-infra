@@ -39,3 +39,42 @@ readonly -a SONGS=(
     "流星のサドル:2010:流れ星に願いをかけた あの夜を覚えてる 君の笑顔が輝いていた"
     "流星のサドル:2010:どんな夜も どんな朝も 二人一緒なら 怖くない"
 )
+
+# ===== ユーティリティ関数 =====
+
+# 曲データを分解して表示
+parse_song() {
+    local entry="$1"
+    IFS=':' read -r title year lyrics <<< "$entry"
+    printf '%s\t%s\t%s' "$title" "$year" "$lyrics"
+}
+
+# ランダムに1曲選んで歌詞を返す
+random_song() {
+    local idx=$(( RANDOM % ${#SONGS[@]} ))
+    echo "${SONGS[$idx]}"
+}
+
+# ===== メイン処理 =====
+
+main() {
+    local entry
+    entry=$(random_song)
+
+    local title year lyrics
+    IFS=':' read -r title year lyrics <<< "$entry"
+
+    echo ""
+    echo "♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪"
+    echo "  久保田利伸"
+    echo "♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪"
+    echo ""
+    echo "  曲名: 「${title}」 (${year})"
+    echo ""
+    echo "  ${lyrics}"
+    echo ""
+    echo "♪ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ♪"
+    echo ""
+}
+
+main "$@"

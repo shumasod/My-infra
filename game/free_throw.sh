@@ -87,3 +87,73 @@ setup_shots() {
         esac
     done
 }
+
+# ===== シュート判定 =====
+# 戻り値: 0=成功 1=失敗（set -e 対策で直接呼び出さず if で使う）
+
+shoot() {
+    local rand=$(( RANDOM % 100 + 1 ))
+    [ "$rand" -le "$SUCCESS_RATE" ]
+}
+
+# ===== スコアボード表示 =====
+
+show_scoreboard() {
+    local shot_num="$1"
+    echo -e "\n  ${C_DIM}── ${shot_num}本目終了 ── スコア ──────────────────${C_RESET}"
+    printf "  %-20s %s%d${C_RESET} / %d本\n" \
+        "${P1_NAME}" "${C_CYAN}" "$P1_SCORE" "$shot_num"
+    printf "  %-20s %s%d${C_RESET} / %d本\n" \
+        "${P2_NAME}" "${C_MAGENTA}" "$P2_SCORE" "$shot_num"
+    echo -e "  ${C_DIM}──────────────────────────────────────${C_RESET}\n"
+}
+
+# ===== 1プレイヤーの全ターン =====
+
+player_turn() {
+    local player_name="$1"
+    local color="$2"
+    local score_var="$3"   # スコア変数名（P1_SCORE or P2_SCORE）
+    local current_score=0
+
+    echo -e "\n${color}${C_BOLD}  ════════════════════════════════════"
+    echo -e "  🏀  ${player_name} のターン"
+    echo -e "  ════════════════════════════════════${C_RESET}\n"
+    sleep 0.5
+
+    local i
+    for (( i=1; i<=TOTAL_SHOTS; i++ )); do
+        printf "  %2d本目 → Enter でシュート！ " "$i"
+        read -r _
+
+        if shoot; then
+            current_score=$(( current_score + 1 ))
+            printf "  ${C_GREEN}${C_BOLD}🎯 IN!   (${current_score}/${i})${C_RESET}\n"
+        else
+            printf "  ${C_RED}✗ MISS  (${current_score}/${i})${C_RESET}\n"
+        fi
+        sleep 0.2
+    done
+
+    # グローバルスコアを更新
+    printf -v "$score_var" '%d' "$current_score"
+
+    echo -e "\n  ${color}${C_BOLD}結果: ${current_score} / ${TOTAL_SHOTS} 本${C_RESET}"
+    sleep 0.5
+}
+
+# ===== ゲームメインループ =====
+
+run_game() {
+    echo -e "\n${C_BOLD}${C_YELLOW}  ─── ゲーム開始 ─── 難易度: ${DIFFICULTY_LABEL} / ${TOTAL_SHOTS}本勝負 ───${C_RESET}"
+
+    # プレイヤー1のターン
+    player_turn "$P1_NAME" "$C_CYAN"    "P1_SCORE"
+
+    echo -e "\n${C_DIM}  ──────────── 交代 ────────────${C_RESET}"
+    printf "  Enter で %s のターン開始 " "$P2_NAME"
+    read -r _
+
+    # プレイヤー2のターン
+    player_turn "$P2_NAME" "$C_MAGENTA" "P2_SCORE"
+}

@@ -366,3 +366,215 @@ run_header_checks() {
     check_x_powered_by    "$headers"
     check_cookies         "$headers"
 }
+
+# ===== SSL/TLS チェック =====
+
+check_ssl() {
+    echo -e "\n${C_BOLD}  ── SSL/TLS 診断 ──────────────────────────────────${C_RESET}"
+
+    # openssl が使えるか確認
+    if ! command -v openssl &>/dev/null; then
+        check_warn "SSL/TLS" "openssl コマンドが見つかりません（スキップ）"
+        return
+    fi
+
+    local port=443
+    local conn_result
+    conn_result=$(echo | openssl s_client -connect "${TARGET_HOST}:${port}" \
+        -servername "$TARGET_HOST" 2>/dev/null || echo "CONNECTION_FAILED")
+
+    if echo "$conn_result" | grep -q "CONNECTION_FAILED\|connect:errno"; then
+        check_warn "SSL接続" "ポート443へ接続できませんでした"
+        return
+    fi
+
+    # 証明書有効期限
+    echo -e "\n${C_BOLD}  [11] SSL証明書 有効期限${C_RESET}"
+    local expiry_str
+    expiry_str=$(echo "$conn_result" | openssl x509 -noout -enddate 2>/dev/null \
+        | sed 's/notAfter=//' || echo "")
+    if [[ -n "$expiry_str" ]]; then
+        local expiry_epoch today_epoch days_left
+        expiry_epoch=$(date -d "$expiry_str" +%s 2>/dev/null || echo "0")
+        today_epoch=$(date +%s)
+        days_left=$(( (expiry_epoch - today_epoch) / 86400 ))
+
+        if [[ $days_left -le 0 ]]; then
+            check_fail "証明書有効期限" 15 "証明書が失効しています！ (${expiry_str})"
+        elif [[ $days_left -le 30 ]]; then
+            check_warn "証明書有効期限" "あと ${days_left} 日で失効 (${expiry_str})"
+        else
+            check_pass "証明書有効期限" 15 "あと ${days_left} 日 (${expiry_str})"
+        fi
+    fi
+
+    # 証明書のCN/SANとホスト名の一致確認
+    echo -e "\n${C_BOLD}  [12] 証明書ホスト名一致${C_RESET}"
+    local cn
+    cn=$(echo "$conn_result" | openssl x509 -noout -subject 2>/dev/null \
+        | grep -oP 'CN\s*=\s*\K[^,/]+' || echo "")
+    local san
+    san=$(echo "$conn_result" | openssl x509 -noout -text 2>/dev/null \
+        | grep -A1 'Subject Alternative Name' | tail -1 || echo "")
+
+    if echo "$cn $san" | grep -q "$TARGET_HOST"; then
+        check_pass "証明書ホスト名" 10 "CN/SAN にホスト名が含まれています"
+    else
+        check_fail "証明書ホスト名" 10 "証明書のホスト名が一致しません (CN: ${cn})"
+    fi
+
+    # TLS 1.0 / 1.1 の無効化確認
+    echo -e "\n${C_BOLD}  [13] 旧TLSバージョン (1.0/1.1) の無効化${C_RESET}"
+    local tls10_open=false tls11_open=false
+    echo | openssl s_client -connect "${TARGET_HOST}:${port}" \
+        -servername "$TARGET_HOST" -tls1 2>&1 | grep -q "Cipher\|CONNECTED" \
+        && tls10_open=true || true
+    echo | openssl s_client -connect "${TARGET_HOST}:${port}" \
+        -servername "$TARGET_HOST" -tls1_1 2>&1 | grep -q "Cipher\|CONNECTED" \
+        && tls11_open=true || true
+
+    if $tls10_open; then
+        check_fail "TLS 1.0" 10 "TLS 1.0 が有効です（脆弱なバージョン）"
+    else
+        check_pass "TLS 1.0 無効" 10 "TLS 1.0 は無効化されています"
+    fi
+    if $tls11_open; then
+        check_fail "TLS 1.1" 5 "TLS 1.1 が有効です（非推奨バージョン）"
+    else
+        check_pass "TLS 1.1 無効" 5 "TLS 1.1 は無効化されています"
+    fi
+}
+
+# ===== 追加チェック =====
+
+check_additional() {
+    echo -e "\n${C_BOLD}  ── 追加診断 ──────────────────────────────────────${C_RESET}"
+
+    # security.txt の存在確認
+    echo -e "\n${C_BOLD}  [14] security.txt${C_RESET}"
+    local sec_url="${TARGET_URL%/}/.well-known/security.txt"
+    local status
+    status=$(curl -s -o /dev/null -w "%{http_code}" -m "$CURL_TIMEOUT" "$sec_url" 2>/dev/null || echo "000")
+    if [[ "$status" == "200" ]]; then
+        check_pass "security.txt" 5 "/.well-known/security.txt が存在します"
+    else
+        check_warn "security.txt" "/.well-known/security.txt がありません (HTTP ${status})"
+    fi
+
+    # robots.txt 確認（ステルス情報漏洩）
+    echo -e "\n${C_BOLD}  [15] robots.txt 内のパス漏洩${C_RESET}"
+    local robots_url="${TARGET_URL%/}/robots.txt"
+    local robots_content
+    robots_content=$(curl -s -m "$CURL_TIMEOUT" "$robots_url" 2>/dev/null || echo "")
+    if echo "$robots_content" | grep -qiP '(admin|backup|config|secret|internal|api/v[0-9])'; then
+        check_warn "robots.txt" "機密パスが robots.txt に記載されている可能性があります"
+    else
+        check_pass "robots.txt" 5 "機密パスの露出は検出されませんでした"
+    fi
+}
+
+# ===== レポート生成 =====
+
+show_report() {
+    local grade
+    local pct=0
+    [[ $MAX_SCORE -gt 0 ]] && pct=$(( SCORE * 100 / MAX_SCORE ))
+
+    if    [[ $pct -ge 90 ]]; then grade="A"
+    elif  [[ $pct -ge 75 ]]; then grade="B"
+    elif  [[ $pct -ge 60 ]]; then grade="C"
+    elif  [[ $pct -ge 40 ]]; then grade="D"
+    else                           grade="F"
+    fi
+
+    local grade_color="$C_RED"
+    [[ "$grade" == "A" ]] && grade_color="${C_GREEN}${C_BOLD}"
+    [[ "$grade" == "B" ]] && grade_color="${C_GREEN}"
+    [[ "$grade" == "C" ]] && grade_color="${C_YELLOW}"
+
+    # スコアバー（30文字幅）
+    local bar_len=$(( pct * 30 / 100 ))
+    local bar=""
+    for (( i=0; i<bar_len; i++ ));    do bar="${bar}█"; done
+    for (( i=bar_len; i<30; i++ ));   do bar="${bar}░"; done
+
+    echo ""
+    echo -e "${C_BOLD}${C_CYAN}  ╔══════════════════════════════════════════════════╗"
+    echo -e "  ║           セキュリティ診断レポート               ║"
+    echo -e "  ╚══════════════════════════════════════════════════╝${C_RESET}"
+    echo ""
+    echo -e "  対象: ${C_BOLD}${TARGET_URL}${C_RESET}"
+    echo -e "  日時: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo ""
+    echo -e "  スコア: ${C_BOLD}${SCORE} / ${MAX_SCORE}点${C_RESET}  (${pct}%)"
+    echo -e "  ${bar} ${grade_color}${C_BOLD}[${grade}]${C_RESET}"
+    echo ""
+
+    if [[ ${#FINDINGS[@]} -gt 0 ]]; then
+        echo -e "  ${C_RED}${C_BOLD}── 問題点 (${#FINDINGS[@]}件) ──────────────────────────${C_RESET}"
+        for f in "${FINDINGS[@]}"; do
+            echo -e "  ${C_RED}${f}${C_RESET}"
+        done
+        echo ""
+    fi
+
+    if [[ ${#WARNINGS[@]} -gt 0 ]]; then
+        echo -e "  ${C_YELLOW}${C_BOLD}── 警告 (${#WARNINGS[@]}件) ───────────────────────────${C_RESET}"
+        for w in "${WARNINGS[@]}"; do
+            echo -e "  ${C_YELLOW}${w}${C_RESET}"
+        done
+        echo ""
+    fi
+
+    if [[ ${#PASSES[@]} -gt 0 ]]; then
+        echo -e "  ${C_GREEN}${C_BOLD}── 合格 (${#PASSES[@]}件) ───────────────────────────${C_RESET}"
+        for p in "${PASSES[@]}"; do
+            echo -e "  ${C_GREEN}${p}${C_RESET}"
+        done
+        echo ""
+    fi
+
+    # ファイル出力
+    if [[ -n "$REPORT_FILE" ]]; then
+        {
+            echo "セキュリティ診断レポート"
+            echo "対象: ${TARGET_URL}"
+            echo "日時: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "スコア: ${SCORE} / ${MAX_SCORE}点 (${pct}%) [${grade}]"
+            echo ""
+            echo "=== 問題点 ==="
+            for f in "${FINDINGS[@]}"; do echo "$f"; done
+            echo ""
+            echo "=== 警告 ==="
+            for w in "${WARNINGS[@]}"; do echo "$w"; done
+            echo ""
+            echo "=== 合格 ==="
+            for p in "${PASSES[@]}"; do echo "$p"; done
+        } > "$REPORT_FILE"
+        log_success "レポートを保存しました: ${REPORT_FILE}"
+    fi
+}
+
+# ===== メイン =====
+
+main() {
+    parse_arguments "$@"
+    confirm_authorization
+
+    echo -e "\n${C_BOLD}${C_CYAN}  ── セキュリティ診断開始 ─────────────────────────${C_RESET}"
+    echo -e "  対象: ${TARGET_URL}\n"
+
+    # HTTPSヘッダーを取得（リダイレクト追跡あり）
+    log_info "レスポンスヘッダーを取得中..."
+    local headers
+    headers=$(fetch_headers_follow "$TARGET_URL")
+
+    echo -e "\n${C_BOLD}  ── HTTPセキュリティヘッダー診断 ──────────────────${C_RESET}"
+    run_header_checks "$headers"
+
+    check_ssl
+    check_additional
+    show_report
+}
+
+main "$@"

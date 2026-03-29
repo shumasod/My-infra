@@ -241,6 +241,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+    # jobレベルで設定することでステップの if: 条件から参照できる
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
       - name: 失敗ジョブの特定
@@ -267,8 +270,11 @@ jobs:
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           DATE=$(date '+%Y-%m-%d')
+          FAILED="${{ steps.check.outputs.failed }}"
+          BRANCH="${{ github.ref_name }}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
 
-          # 同日の未解決Issueが既にあればコメントを追加
+          # 未解決Issueが既にあればコメントを追加、なければ新規作成
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
             --label "security-alert" \
@@ -277,60 +283,30 @@ jobs:
             --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" \
-              --repo "${{ github.repository }}" \
-              --body "### 🔄 再発検知: ${DATE}
-**失敗ジョブ:**${{ steps.check.outputs.failed }}
-**実行URL:** ${RUN_URL}
-**ブランチ:** \`${{ github.ref_name }}\` / コミット: \`${GITHUB_SHA:0:7}\`"
+            BODY=$(printf '### 🔄 再発検知: %s\n**失敗ジョブ:** %s\n**実行URL:** %s\n**ブランチ:** `%s` / コミット: `%s`' \
+              "${DATE}" "${FAILED}" "${RUN_URL}" "${BRANCH}" "${SHORT_SHA}")
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" --body "$BODY"
             echo "既存Issue #${EXISTING} にコメントを追加しました"
           else
+            BODY=$(printf '## セキュリティテストが失敗しました\n\n**失敗ジョブ:** %s\n\n| 項目 | 値 |\n|------|-----|\n| 実行URL | [ログを確認](%s) |\n| ブランチ | `%s` |\n| コミット | `%s` |\n| 検知日時 | %s |\n\n> このIssueはCIパイプラインにより自動作成されました。問題を解決後クローズしてください。' \
+              "${FAILED}" "${RUN_URL}" "${BRANCH}" "${SHORT_SHA}" "$(date '+%Y-%m-%d %H:%M UTC')")
             gh issue create \
               --repo "${{ github.repository }}" \
               --title "🚨 セキュリティテスト失敗 (${DATE})" \
               --label "security-alert" \
-              --body "## セキュリティテストが失敗しました
-
-**失敗ジョブ:**${{ steps.check.outputs.failed }}
-
-| 項目 | 値 |
-|------|-----|
-| 実行URL | [ログを確認](${RUN_URL}) |
-| ブランチ | \`${{ github.ref_name }}\` |
-| コミット | \`${GITHUB_SHA:0:7}\` |
-| 検知日時 | $(date '+%Y-%m-%d %H:%M UTC') |
-
-> このIssueはCIパイプラインにより自動作成されました。
-> 問題を解決後、このIssueをクローズしてください。"
+              --body "$BODY"
             echo "新しいIssueを作成しました"
           fi
 
       # --- Slack通知（SLACK_WEBHOOK_URL シークレット設定時のみ実行） ---
       - name: Slack通知
-        if: env.SLACK_WEBHOOK_URL != ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -s -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-type: application/json' \
-            -d "{
-              \"text\": \"🚨 *セキュリティテスト失敗*\",
-              \"attachments\": [{
-                \"color\": \"danger\",
-                \"fields\": [
-                  {\"title\": \"失敗ジョブ\", \"value\": \"${{ steps.check.outputs.failed }}\", \"short\": false},
-                  {\"title\": \"ブランチ\",   \"value\": \"\`${{ github.ref_name }}\`\",            \"short\": true},
-                  {\"title\": \"コミット\",   \"value\": \"\`${GITHUB_SHA:0:7}\`\",                \"short\": true}
-                ],
-                \"actions\": [{\"type\": \"button\", \"text\": \"ログを確認\", \"url\": \"${RUN_URL}\"}]
-              }]
-            }" && echo "Slack通知を送信しました" || echo "⚠️ Slack通知の送信に失敗しました"
-
-      - name: Slack未設定時の案内
-        if: env.SLACK_WEBHOOK_URL == ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          echo "💡 Slack通知を有効にする場合は SLACK_WEBHOOK_URL シークレットを追加してください"
-          echo "   設定: Repository Settings > Secrets and variables > Actions > New repository secret"
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            PAYLOAD=$(printf '{"text":"🚨 *セキュリティテスト失敗*","attachments":[{"color":"danger","text":"失敗ジョブ: %s\\nブランチ: `%s` / コミット: `%s`\\n<%s|ログを確認>"}]}' \
+              "${{ steps.check.outputs.failed }}" "${{ github.ref_name }}" "${GITHUB_SHA:0:7}" "${RUN_URL}")
+            curl -s -X POST "$SLACK_WEBHOOK_URL" -H 'Content-type: application/json' -d "$PAYLOAD" \
+              && echo "Slack通知を送信しました" || echo "⚠️ Slack通知の送信に失敗しました"
+          else
+            echo "💡 Slack通知を有効にする場合は SLACK_WEBHOOK_URL シークレットを追加してください"
+          fi

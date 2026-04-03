@@ -133,6 +133,137 @@ kanchi_says() {
     pause 0.3
 }
 
+# ===== アスキーアート関数 =====
+
+# アート表示（行ごとにフェードイン）
+print_art() {
+    local color="${1:-$C_RESET}"
+    shift
+    echo ""
+    while IFS= read -r line; do
+        echo -e "  ${color}${line}${C_RESET}"
+        sleep 0.04
+    done <<< "$*"
+    echo ""
+}
+
+# 新宿の街角・出会い
+art_meeting() {
+    echo -e "  ${C_SKY}"
+    local lines=(
+        "     カンチ              リカ"
+        "       o                  o"
+        "      /|\\    ✨  ♥      /|\\"
+        "      / \\      ♥        / \\"
+        " ─────────────────────────────"
+        "      〜 東京・新宿の街角 〜"
+    )
+    for line in "${lines[@]}"; do
+        echo -e "  ${C_SKY}${line}${C_RESET}"
+        sleep 0.05
+    done
+    echo ""
+}
+
+# 渋谷スクランブル交差点
+art_shibuya() {
+    local lines=(
+        " ┌──────────────────────────────────┐"
+        " │ ▓▓▓▓▓  ◆ スクランブル ◆  ▓▓▓▓▓ │"
+        " ├──────────────────────────────────┤"
+        " │  →→  ⊙  ⊙   ⊙  ⊙   ⊙  ←←  │"
+        " │  →→ ⊙  カ    ♥    リ  ⊙  ←← │"
+        " │  →→  ⊙  ⊙   ⊙  ⊙   ⊙  ←←  │"
+        " └──────────────────────────────────┘"
+        "       〜 渋谷スクランブル交差点 〜"
+    )
+    echo ""
+    for line in "${lines[@]}"; do
+        echo -e "  ${C_YELLOW}${line}${C_RESET}"
+        sleep 0.05
+    done
+    echo ""
+}
+
+# 深夜の電話
+art_phone() {
+    local lines=(
+        "         ★    ☽    ★   ☆    ★"
+        "    ★                           ★"
+        "      ╭──────────────╮"
+        "      │  ☎  ........ │  深夜2時"
+        "      │              │"
+        "      ╰──────────────╯"
+        "          リカ（一人）"
+    )
+    echo ""
+    for line in "${lines[@]}"; do
+        echo -e "  ${C_BLUE}${line}${C_RESET}"
+        sleep 0.06
+    done
+    echo ""
+}
+
+# 駅のホーム
+art_station() {
+    local lines=(
+        "  ╔══════════════════════════════════╗"
+        "  ║ □□□□□□□□□□□□□□□□□□□□□ ║ ← 電車"
+        "  ╚══════════════════════════════════╝"
+        "  ════════════════════════════════════"
+        "  (カ) →→→         ♥♥♥   ←←← (リ)"
+        "  カンチ                        リカ"
+        "       〜 東京駅・夕暮れのホーム 〜"
+    )
+    echo ""
+    for line in "${lines[@]}"; do
+        echo -e "  ${C_CYAN}${line}${C_RESET}"
+        sleep 0.06
+    done
+    echo ""
+}
+
+# リカ・絶叫シーン
+art_shout() {
+    local lines=(
+        "       ／￣￣￣￣￣＼"
+        "      ／   カンチ！！  ＼"
+        "     ／_______________＼"
+        "          ↑ 叫ぶリカ"
+        "       ╭──────────╮"
+        "       │  ∩(´∀\`)∩ │  リカ"
+        "       ╰──────────╯"
+        "   ≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋"
+    )
+    echo ""
+    for line in "${lines[@]}"; do
+        echo -e "  ${C_RIKA}${line}${C_RESET}"
+        sleep 0.05
+    done
+    echo ""
+}
+
+# 東京の夜景（エピローグ）
+art_tokyo() {
+    local lines=(
+        "   ☆          ★         ☆     ★"
+        "   |         東京          |"
+        "  ╔╧╗  /\\   タワー   ╔═╗ ╔═╗ ╔═╗"
+        "  ║▓║ /||\\           ║▓║ ║▓║ ║▓║"
+        "  ║▓║  ||   ╔══╗    ║▓║ ║▓║ ║▓║"
+        "  ║▓║  ||   ║██║    ║▓║ ║▓║ ║▓║"
+        "  ╚═╝  ||   ╚══╝    ╚═╝ ╚═╝ ╚═╝"
+        "  ████████████████████████████████"
+        "     〜 東京の夜景に消えていく 〜"
+    )
+    echo ""
+    for line in "${lines[@]}"; do
+        echo -e "  ${C_TITLE}${line}${C_RESET}"
+        sleep 0.07
+    done
+    echo ""
+}
+
 # ハートアニメーション
 heart_animation() {
     local count="${1:-5}"
@@ -203,6 +334,7 @@ scene_1() {
     echo ""
     rika_kanchi 1 "soft"
     pause 0.5
+    art_meeting
     narrate "その日から、リカの「カンチ！」は始まった。"
 }
 
@@ -214,7 +346,8 @@ scene_2() {
     scene_break
 
     narrate "渋谷のスクランブル交差点。人の波の中でリカはカンチを見つけた。"
-    pause 0.8
+    art_shibuya
+    pause 0.5
 
     rika_kanchi 2 "normal"
     pause 0.5
@@ -242,7 +375,7 @@ scene_3() {
     scene_break
 
     narrate "深夜2時。リカは電話をかけた。"
-    pause 0.8
+    art_phone
 
     echo -e "${C_NARR}  ☎  プルルル… プルルル…${C_RESET}"
     pause 1.0
@@ -292,6 +425,7 @@ scene_4() {
     narrate "電車の到着を告げるアナウンスが流れた。"
     pause 0.5
 
+    art_station
     echo -e "${C_NARR}  📢 まもなく、○番線に電車が参ります…${C_RESET}"
     pause 1.0
 
@@ -320,9 +454,9 @@ scene_5() {
     scene_break
 
     narrate "別れの日。リカは全力で、カンチに叫んだ。"
-    pause 1.0
+    art_shout
+    pause 0.5
 
-    echo ""
     rika_kanchi 5 "desperate"
     pause 0.5
 
@@ -365,9 +499,9 @@ epilogue() {
     narrate "あれから何年が経っただろう。"
     pause 0.8
     narrate "東京の街は変わっても、あの夏の記憶は変わらない。"
-    pause 1.0
+    art_tokyo
+    pause 0.5
 
-    echo ""
     echo -e "  ${C_HEART}♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥♥${C_RESET}"
     echo ""
     typewriter "    「カンチ」と呼ぶ声が、東京に響き渡る。" 0.06 "$C_PINK"

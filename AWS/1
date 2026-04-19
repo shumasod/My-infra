@@ -1,7 +1,7 @@
 # eksctlインストール
 brew install eksctl
 
-# クラスター作成（検証用なので小さめ）
+# クラスター作成
 eksctl create cluster \
   --name maharaja-cluster \
   --region ap-northeast-1 \

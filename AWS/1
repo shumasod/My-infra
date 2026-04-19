@@ -1,4 +1,4 @@
-# eksctlインストール（未導入の場合）
+# eksctlインストール
 brew install eksctl
 
 # クラスター作成（検証用なので小さめ）

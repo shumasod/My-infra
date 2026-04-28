@@ -1,7 +1,7 @@
 # ログイン
 argocd login localhost:8080
 
-# GitHubリポジトリ登録（HTTPS）
+# GitHubリポジトリ登録
 argocd repo add https://github.com/<your-org>/<your-repo>.git \
   --username <github-username> \
   --password <github-pat>

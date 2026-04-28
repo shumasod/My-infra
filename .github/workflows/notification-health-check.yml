@@ -1,0 +1,182 @@
+name: Notification Health Check
+
+# 通知システムの疎通確認
+# 月1回 + 手動実行で通知チャネルの健全性を検証する。
+# 直近7日間のセキュリティテスト失敗が見逃されていないかも確認する。
+
+on:
+  schedule:
+    # 毎月1日 午前9時（JST 18時）に実行
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+    inputs:
+      test_slack:
+        description: 'Slackにテスト通知を送信する'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  # ===== 直近の失敗確認 + Issue通知チャネル検証 =====
+  check-and-notify:
+    name: 失敗確認・Issue通知チャネル検証
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      has_recent_failure: ${{ steps.scan.outputs.has_recent_failure }}
+
+    steps:
+      - name: 直近7日間のセキュリティテスト失敗をスキャン
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🔍 直近7日間のワークフロー実行結果を確認中..."
+
+          # gh run list は --created フィルタが不安定なため --limit + jq で日付フィルタ
+          SINCE=$(date -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')
+          FAILURES=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow "Security Tests" \
+            --status failure \
+            --limit 30 \
+            --json conclusion,createdAt,databaseId,headBranch \
+            --jq "[.[] | select(.createdAt > \"${SINCE}\")] | length" \
+            2>/dev/null || echo "0")
+
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "has_recent_failure=true" >> $GITHUB_OUTPUT
+            echo "⚠️ 直近7日間に ${FAILURES} 件の失敗が検出されました"
+          else
+            echo "has_recent_failure=false" >> $GITHUB_OUTPUT
+            echo "✅ 直近7日間の失敗なし"
+          fi
+
+      - name: security-alert ラベルの確認・自動作成
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "security-alert" \
+            --repo "${{ github.repository }}" \
+            --color "d93f0b" \
+            --description "セキュリティテスト失敗の自動通知" 2>/dev/null \
+            && echo "✅ ラベルを作成しました" || echo "✅ security-alert ラベルは既に存在します"
+
+      - name: 未解決Issueの確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OPEN_COUNT=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "security-alert" \
+            --state open \
+            --json number \
+            --jq 'length' 2>/dev/null || echo "0")
+
+          if [ "$OPEN_COUNT" -gt 0 ]; then
+            echo "⚠️ 未解決の security-alert Issue が ${OPEN_COUNT} 件あります"
+            gh issue list \
+              --repo "${{ github.repository }}" \
+              --label "security-alert" \
+              --state open \
+              --json number,title,createdAt \
+              --jq '.[] | "#\(.number) \(.title) (\(.createdAt[:10]))"' || true
+          else
+            echo "✅ 未解決の security-alert Issue はありません"
+          fi
+
+      - name: 通知漏れ検知・Issue再作成
+        if: steps.scan.outputs.has_recent_failure == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OPEN_COUNT=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label "security-alert" \
+            --state open \
+            --json number \
+            --jq 'length' 2>/dev/null || echo "0")
+
+          # 失敗があるのにIssueがない = 通知が届いていない可能性
+          if [ "$OPEN_COUNT" -eq 0 ]; then
+            echo "🚨 通知漏れの可能性があります。Issue を作成します..."
+            BODY=$(printf '## 通知漏れが検知されました\n\n月次ヘルスチェックにより直近7日間の失敗が通知されていない可能性があります。\n\n| 項目 | 値 |\n|------|-----|\n| 検知日時 | %s |\n| ヘルスチェック | [確認](%s) |\n\n> [notification-health-check] により自動作成されました。' \
+              "$(date '+%Y-%m-%d %H:%M UTC')" \
+              "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "🚨 [通知漏れ検知] セキュリティテスト失敗 ($(date '+%Y-%m-%d'))" \
+              --label "security-alert" \
+              --body "$BODY"
+          fi
+
+  # ===== Slack通知チャネルの疎通確認 =====
+  verify-slack:
+    name: Slack通知チャネル疎通確認
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Slack疎通確認
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "ℹ️ SLACK_WEBHOOK_URL 未設定 - スキップ"
+            echo "   有効化: Repository Settings > Secrets and variables > Actions > SLACK_WEBHOOK_URL"
+            exit 0
+          fi
+
+          SEND_TEST="${{ github.event.inputs.test_slack }}"
+          if [ "${SEND_TEST}" != "true" ] && [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "ℹ️ test_slack=false のためスキップ"
+            exit 0
+          fi
+
+          echo "📡 Slack疎通確認メッセージを送信中..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-type: application/json' \
+            -d '{"text":"✅ *通知ヘルスチェック* - My-infra セキュリティ通知チャネルは正常です。"}')
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Slack疎通確認 OK (HTTP ${HTTP_STATUS})"
+          else
+            echo "❌ Slack疎通確認 NG (HTTP ${HTTP_STATUS})"
+            exit 1
+          fi
+
+  # ===== サマリー =====
+  health-check-summary:
+    name: ヘルスチェックサマリー
+    runs-on: ubuntu-latest
+    needs: [check-and-notify, verify-slack]
+    if: always()
+    continue-on-error: true
+    permissions:
+      contents: read
+
+    steps:
+      - name: サマリー出力
+        run: |
+          echo "# 🔔 通知ヘルスチェック結果 ($(date '+%Y-%m-%d'))" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| チャネル | 状態 |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 直近失敗確認 + Issue通知 | ${{ needs.check-and-notify.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Slack通知 | ${{ needs.verify-slack.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.check-and-notify.outputs.has_recent_failure }}" = "true" ]; then
+            echo "## ⚠️ 直近7日間に失敗が検出されました" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ 直近7日間の失敗なし・通知チャネル正常" >> $GITHUB_STEP_SUMMARY
+          fi

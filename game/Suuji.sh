@@ -1,28 +1,31 @@
 #!/bin/bash
+set -euo pipefail
 
 ########################
 # 数字当てゲーム
 ########################
 
-# カラー定義
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-# カーソル非表示
-printf "\e[?25l"
+# カラーエイリアス（後方互換性）
+RED="$C_RED"
+GREEN="$C_GREEN"
+YELLOW="$C_YELLOW"
+BLUE="$C_BLUE"
+MAGENTA="$C_MAGENTA"
+CYAN="$C_CYAN"
+WHITE="$C_WHITE"
+NC="$C_RESET"
 
-# ANSIエスケープシーケンスリセット
+hide_cursor
+
+# 終了時クリーンアップ
 esc_reset() {
-  printf "\e[2J\e[H\e[?25h"
+  show_cursor
+  clear_screen
   exit 0
 }
-trap "esc_reset" INT QUIT TERM
+trap "esc_reset" EXIT INT QUIT TERM
 
 # アニメーション表示
 show_animation() {

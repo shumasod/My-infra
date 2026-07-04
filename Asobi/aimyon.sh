@@ -1,67 +1,87 @@
 #!/bin/bash
+set -euo pipefail
 
-# Text formatting
-BOLD='\033[1m'
-ITALIC='\033[3m'
-RESET='\033[0m'
-BLUE='\033[34m'
-PURPLE='\033[35m'
-CYAN='\033[36m'
+#
+# あいみょん 楽曲ランダム表示
+# 作成日: 2026-07-04
+# バージョン: 2.0
+#
 
-# Function to display formatted text
-print_formatted() {
-    local type=$1
-    local text=$2
-    case $type in
-        "title")   echo -e "${BOLD}${BLUE}$text${RESET}" ;;
-        "lyrics")  echo -e "${ITALIC}${PURPLE}$text${RESET}" ;;
-        "single")  echo -e "${CYAN}$text${RESET}" ;;
-    esac
-}
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-# Function to display a decorative separator
-print_separator() {
-    echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-}
+readonly PROG_NAME=$(basename "$0")
+readonly VERSION="2.0"
 
-# Store Aimyon's songs with additional metadata
-# Format: "Song title:Lyrics:Single:Year:Additional note"
-declare -A songs=(
-    ["marigold"]="マリーゴールド:風の強さがちょっと心を揺さぶりすぎて まじめに見つめた君が恋しい:Marigold:2018:Breaking through single"
-    ["kimi_rock"]="君はロックを聴かない:少し寂しそうな君に こんな歌を聞かそう 手を叩く合図:君はロックを聴かない:2017:Major debut single"
-    ["hadaka"]="裸の心:一体このままいつまで 一人でいるつもりだろう だんだん自分を憎んだり:裸の心:2019:Oricon weekly first place"
-    ["harunohi"]="春の日:北千住駅のplatform 銀色の改札 思い出ばなしと 思い出深し:春の日:2018:Spring-themed song"
-    ["ai"]="愛を伝えたいだとか:健康的な朝だな こんな時に君の「愛してる」が聞きたいや 揺れるカーテン:愛を伝えたいだとか:2019:Love song"
+# Format: "タイトル:歌詞:シングル名:リリース年:備考"
+declare -A SONGS=(
+    ["marigold"]="マリーゴールド:風の強さがちょっと心を揺さぶりすぎて まじめに見つめた君が恋しい:Marigold:2018:ブレイクのきっかけとなったシングル"
+    ["kimi_rock"]="君はロックを聴かない:少し寂しそうな君に こんな歌を聞かそう 手を叩く合図:君はロックを聴かない:2017:メジャーデビューシングル"
+    ["hadaka"]="裸の心:一体このままいつまで 一人でいるつもりだろう だんだん自分を憎んだり:裸の心:2019:オリコン週間1位"
+    ["harunohi"]="春の日:北千住駅のplatform 銀色の改札 思い出ばなしと 思い出深し:春の日:2018:春をテーマにした楽曲"
+    ["ai"]="愛を伝えたいだとか:健康的な朝だな こんな時に君の「愛してる」が聞きたいや 揺れるカーテン:愛を伝えたいだとか:2019:ラブソング"
 )
 
-# Function to display song information with formatting
-display_song() {
-    local song_data=$1
-    IFS=':' read -r title lyrics single year note <<< "$song_data"
-    
-    print_separator
-    print_formatted "タイトル" "♪ $title"
-    echo -e "\n${BOLD}Lyrics:${RESET}"
-    print_formatted "歌詞" "$lyrics"
-    echo -e "\n${BOLD}Single:${RESET}"
-    print_formatted "シングル" "$single ($year)"
-    echo -e "\n${BOLD}Note:${RESET} $note"
-    print_separator
+print_separator_colored() {
+    echo -e "\n${C_BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}\n"
 }
 
-# Main execution
-echo -e "${BOLD}${BLUE}Welcome to Aimyon Song Selector!${RESET}\n"
+display_song() {
+    local song_data="$1"
+    local title lyrics single year note
+    IFS=':' read -r title lyrics single year note <<< "$song_data"
 
-# Get all keys (song identifiers)
-song_keys=("${!songs[@]}")
+    print_separator_colored
+    echo -e "${C_BOLD}${C_BLUE}♪ ${title}${C_RESET}"
+    echo ""
+    echo -e "${C_BOLD}歌詞:${C_RESET}"
+    echo -e "${C_MAGENTA}${lyrics}${C_RESET}"
+    echo ""
+    echo -e "${C_BOLD}シングル:${C_RESET}"
+    echo -e "${C_CYAN}${single} (${year})${C_RESET}"
+    echo ""
+    echo -e "${C_BOLD}備考:${C_RESET} ${note}"
+    print_separator_colored
+}
 
-# Select random song
-random_index=$((RANDOM % ${#song_keys[@]}))
-random_key=${song_keys[$random_index]}
-random_song="${songs[$random_key]}"
+show_usage() {
+    cat <<EOF
+使用方法: $PROG_NAME [オプション]
 
-# Display the selected song
-display_song "$random_song"
+あいみょんの楽曲をランダムに表示します。
 
-# Add usage hint
-echo -e "Run the script again for another random Aimyon song!\n"
+オプション:
+  -h, --help     このヘルプを表示
+  -v, --version  バージョン情報を表示
+  -a, --all      全曲を表示
+EOF
+}
+
+main() {
+    local show_all=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)    show_usage; exit 0 ;;
+            -v|--version) echo "$PROG_NAME version $VERSION"; exit 0 ;;
+            -a|--all)     show_all=true; shift ;;
+            *) error_exit "不明なオプション: $1" ;;
+        esac
+    done
+
+    echo -e "${C_BOLD}${C_BLUE}Welcome to Aimyon Song Selector!${C_RESET}\n"
+
+    local song_keys=("${!SONGS[@]}")
+
+    if "$show_all"; then
+        for key in "${song_keys[@]}"; do
+            display_song "${SONGS[$key]}"
+        done
+    else
+        local random_index=$(( RANDOM % ${#song_keys[@]} ))
+        local random_key="${song_keys[$random_index]}"
+        display_song "${SONGS[$random_key]}"
+        echo -e "${C_DIM}もう一度実行すると別の曲が表示されます！${C_RESET}\n"
+    fi
+}
+
+main "$@"

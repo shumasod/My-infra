@@ -1,74 +1,111 @@
 #!/bin/bash
+set -euo pipefail
 
-# カラー定義
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PINK='\033[1;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+#
+# バースデーケーキ生成スクリプト
+# 作成日: 2026-07-04
+# バージョン: 2.0
+#
 
-# ケーキを描画
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+readonly PROG_NAME=$(basename "$0")
+readonly VERSION="2.0"
+
+show_usage() {
+    cat <<EOF
+使用方法: $PROG_NAME [オプション]
+
+バースデーケーキをアニメーション付きで表示します。
+
+オプション:
+  -h, --help       このヘルプを表示
+  -v, --version    バージョン情報を表示
+  -n, --name NAME  お祝いする人の名前
+  --fast           アニメーションをスキップ
+EOF
+}
+
 draw_cake() {
-    clear
+    local name="${1:-}"
     echo ""
-    echo -e "${YELLOW}     Happy Birthday!${NC}"
+    if [ -n "$name" ]; then
+        print_center "Happy Birthday, ${name}!" 0 "${C_BOLD}${C_YELLOW}"
+    else
+        print_center "Happy Birthday!" 0 "${C_BOLD}${C_YELLOW}"
+    fi
     echo ""
-    echo -e "       ${WHITE}|${NC} ${WHITE}|${NC} ${WHITE}|${NC}"
-    echo -e "       ${YELLOW}*${NC} ${YELLOW}*${NC} ${YELLOW}*${NC}"
-    echo -e "${PINK}    ~~~~~~~~~~~~~~~~${NC}"
-    echo -e "${PINK}  ~~~~~~~~~~~~~~~~~~${NC}"
-    echo -e "${CYAN}  ====================${NC}"
-    echo -e "${WHITE}  ####################${NC}"
-    echo -e "${PINK}  ====================${NC}"
-    echo -e "${WHITE}  ▽▽▽▽▽▽▽▽▽▽${NC}"
-    echo -e "${CYAN}    =================${NC}"
-    echo -e "${CYAN}      ==============${NC}"
+    print_center "   ${C_WHITE}|${C_RESET} ${C_WHITE}|${C_RESET} ${C_WHITE}|${C_RESET}" 0 ""
+    print_center "   ${C_YELLOW}*${C_RESET} ${C_YELLOW}*${C_RESET} ${C_YELLOW}*${C_RESET}" 0 ""
+    print_center "${C_MAGENTA}~~~~~~~~~~~~~~~~${C_RESET}" 0 ""
+    print_center "${C_MAGENTA}~~~~~~~~~~~~~~~~~~${C_RESET}" 0 ""
+    print_center "${C_CYAN}====================${C_RESET}" 0 ""
+    print_center "${C_WHITE}####################${C_RESET}" 0 ""
+    print_center "${C_MAGENTA}====================${C_RESET}" 0 ""
+    print_center "${C_WHITE}▽▽▽▽▽▽▽▽▽▽${C_RESET}" 0 ""
+    print_center "${C_CYAN}=================${C_RESET}" 0 ""
+    print_center "${C_CYAN}==============${C_RESET}" 0 ""
     echo ""
 }
 
-# メイン処理
-echo "🎂 バースデーケーキを作ります!"
-sleep 1
+main() {
+    local name=""
+    local fast=false
 
-# 材料を表示
-materials=("小麦粉" "バター" "砂糖" "卵" "ベーキングパウダー" "バニラエッセンス" "生クリーム" "フルーツ")
-echo -e "\n📝 必要な材料："
-for item in "${materials[@]}"; do
-    echo "・$item を準備中..."
-    sleep 0.3
-done
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)    show_usage; exit 0 ;;
+            -v|--version) echo "$PROG_NAME version $VERSION"; exit 0 ;;
+            -n|--name)
+                [[ $# -lt 2 ]] && error_exit "--name には名前が必要です"
+                name="$2"; shift 2 ;;
+            --fast) fast=true; shift ;;
+            *) error_exit "不明なオプション: $1" ;;
+        esac
+    done
 
-echo -e "\n🔥 オーブンを180℃に予熱します..."
-sleep 1
+    clear_screen
+    log_info "バースデーケーキを作ります！"
 
-echo "🥣 生地を混ぜています..."
-sleep 1
+    local delay=0.3
+    "$fast" && delay=0
 
-echo "🎂 生地をケーキ型に流し込みます..."
-sleep 1
+    local -a materials=("小麦粉" "バター" "砂糖" "卵" "ベーキングパウダー" "バニラエッセンス" "生クリーム" "フルーツ")
+    echo ""
+    echo -e "  ${C_BOLD}必要な材料:${C_RESET}"
+    local item
+    for item in "${materials[@]}"; do
+        echo -e "  ${C_DIM}・${item} を準備中...${C_RESET}"
+        sleep "$delay"
+    done
 
-echo -e "\n⏰ オーブンで焼いています..."
-for i in {1..3}; do
-    echo -n "."
-    sleep 0.5
-done
-echo
+    echo ""
+    echo -e "  ${C_YELLOW}オーブンを180℃に予熱します...${C_RESET}"
+    sleep "$delay"
+    echo -e "  ${C_YELLOW}生地を混ぜています...${C_RESET}"
+    sleep "$delay"
+    echo -e "  ${C_YELLOW}ケーキ型に流し込みます...${C_RESET}"
+    sleep "$delay"
 
-echo "🧁 生クリームを塗っています..."
-sleep 1
+    if ! "$fast"; then
+        printf "  ${C_DIM}オーブンで焼いています"
+        local i
+        for (( i = 0; i < 5; i++ )); do printf "."; sleep 0.4; done
+        echo -e "${C_RESET}"
+    fi
 
-echo -e "🍓 デコレーションを施しています..."
-sleep 1
+    echo -e "  ${C_MAGENTA}生クリームを塗っています...${C_RESET}"
+    sleep "$delay"
+    echo -e "  ${C_RED}デコレーションを施しています...${C_RESET}"
+    sleep "$delay"
 
-# ケーキを表示
-draw_cake
+    clear_screen
+    draw_cake "$name"
+    log_success "ケーキが完成しました！"
+    echo ""
+    echo -e "  ${C_DIM}何かキーを押して終了...${C_RESET}"
+    read -rn1
+    clear_screen
+}
 
-echo -e "\n${GREEN}🎉 ケーキが完成しました！${NC}"
-echo "お好きなキーを押して終了..."
-read -n 1
-
-clear
-exit 0
+main "$@"

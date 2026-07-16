@@ -11,8 +11,11 @@ set -euo pipefail  # エラーハンドリング: エラー時終了、未定義
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 # 定数定義
-readonly SCRIPT_NAME=$(basename "$0")
-readonly LOG_FILE="/tmp/${SCRIPT_NAME%.*}.log"
+readonly SCRIPT_NAME
+SCRIPT_NAME=$(basename "$0")
+readonly LOG_DIR
+LOG_DIR=$(mktemp -d "/tmp/${SCRIPT_NAME%.*}.XXXXXX")
+readonly LOG_FILE="${LOG_DIR}/script.log"
 readonly CONFIG_FILE="./config.txt"
 
 # ログ関数
@@ -212,9 +215,10 @@ create_backup() {
     
     print_color "$BLUE" "バックアップ作成中..."
     
-    if tar -czf "/tmp/$backup_name" -C "$(dirname "$source_dir")" "$(basename "$source_dir")" 2>/dev/null; then
-        print_color "$GREEN" "バックアップ完了: /tmp/$backup_name"
-        log "INFO" "バックアップ作成: /tmp/$backup_name"
+    local backup_path="${LOG_DIR}/${backup_name}"
+    if tar -czf "$backup_path" -C "$(dirname "$source_dir")" "$(basename "$source_dir")" 2>/dev/null; then
+        print_color "$GREEN" "バックアップ完了: $backup_path"
+        log "INFO" "バックアップ作成: $backup_path"
     else
         print_color "$RED" "バックアップ失敗"
         log "ERROR" "バックアップ失敗: $source_dir"
@@ -268,8 +272,8 @@ parallel_demo() {
 cleanup() {
     print_color "$BLUE" "クリーンアップ中..."
     # 一時ファイルの削除など
-    if [[ -f "/tmp/temp_$$" ]]; then
-        rm -f "/tmp/temp_$$"
+    if [[ -d "${LOG_DIR:-}" ]]; then
+        rm -rf "$LOG_DIR"
     fi
     print_color "$GREEN" "クリーンアップ完了"
 }

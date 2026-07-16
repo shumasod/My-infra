@@ -80,9 +80,7 @@ main() {
     now=$(date +"%Y-%m-%d %H:%M:%S")
     load_avg=$(get_db_load)
 
-    echo "$now,$load_avg" >> "$OUTPUT_FILE"
-
-    if [ $? -ne 0 ]; then
+    if ! echo "$now,$load_avg" >> "$OUTPUT_FILE"; then
         error_exit "データベース負荷の記録に失敗しました。"
     fi
 

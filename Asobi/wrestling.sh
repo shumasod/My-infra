@@ -132,29 +132,33 @@ attack() {
   local defender_gauge_var="$7"
   local attacker_combo_var="$8"
   
-  local defender_hp=$(eval echo \$$defender_hp_var)
-  local attacker_hp=$(eval echo \$$attacker_hp_var)
-  local attacker_gauge=$(eval echo \$$attacker_gauge_var)
-  local attacker_combo=$(eval echo \$$attacker_combo_var)
-  
+  local -n _def_hp_ref="$defender_hp_var"
+  local -n _atk_hp_ref="$attacker_hp_var"
+  local -n _atk_gauge_ref="$attacker_gauge_var"
+  local -n _atk_combo_ref="$attacker_combo_var"
+  local defender_hp="$_def_hp_ref"
+  local attacker_hp="$_atk_hp_ref"
+  local attacker_gauge="$_atk_gauge_ref"
+  local attacker_combo="$_atk_combo_ref"
+
   sleep 0.4
-  
+
   # 必殺技判定（ゲージ100以上かつ30%の確率で発動）
   if [ $attacker_gauge -ge 100 ] && [ $((RANDOM % 10)) -lt 3 ]; then
     IFS='|' read -r mv_name mv_lo mv_hi <<< "$(choose_finisher)"
     local dmg=$(( (RANDOM % (mv_hi - mv_lo + 1)) + mv_lo ))
-    
+
     echo -e "${attacker_color}${BOLD}${attacker}${RESET}${attacker_color} が必殺技の構えを取る！${RESET}"
     sleep 0.5
     echo -e "${RED}${BOLD}★★★ ${mv_name}！！！ ★★★${RESET}"
     sleep 0.5
-    
+
     # 必殺技後はゲージリセット
-    eval ${attacker_gauge_var}=0
-    
+    _atk_gauge_ref=0
+
     local new_def_hp=$((defender_hp - dmg))
     if [ $new_def_hp -lt 0 ]; then new_def_hp=0; fi
-    eval ${defender_hp_var}=$new_def_hp
+    _def_hp_ref=$new_def_hp
     
     echo -e "${RED}${BOLD}${dmg}ダメージ！${RESET}"
     echo -e "${CYAN}${defender}の残りHP: ${new_def_hp}${RESET}"
@@ -193,9 +197,9 @@ attack() {
     if [ $new_def_hp -lt 0 ]; then new_def_hp=0; fi
     if [ $new_self_hp -lt 0 ]; then new_self_hp=0; fi
     
-    eval ${defender_hp_var}=$new_def_hp
-    eval ${attacker_hp_var}=$new_self_hp
-    
+    _def_hp_ref=$new_def_hp
+    _atk_hp_ref=$new_self_hp
+
     echo -e "${YELLOW}場外での激しい攻防！${RESET}"
     echo -e "${RED}${defender} - ${dmg}ダメージ！${RESET}"
     echo -e "${RED}${attacker} - ${self_dmg}ダメージ（反動）！${RESET}"
@@ -204,8 +208,8 @@ attack() {
   else
     local new_def_hp=$((defender_hp - dmg))
     if [ $new_def_hp -lt 0 ]; then new_def_hp=0; fi
-    eval ${defender_hp_var}=$new_def_hp
-    
+    _def_hp_ref=$new_def_hp
+
     echo -e "${RED}${dmg}ダメージ！${RESET}"
     echo -e "${CYAN}${defender}の残りHP: ${new_def_hp}${RESET}"
   fi
@@ -213,8 +217,8 @@ attack() {
   # ゲージ増加
   attacker_gauge=$((attacker_gauge + mv_gauge))
   if [ $attacker_gauge -gt 150 ]; then attacker_gauge=150; fi
-  eval ${attacker_gauge_var}=$attacker_gauge
-  
+  _atk_gauge_ref=$attacker_gauge
+
   # ゲージ表示（100以上で必殺技使用可能）
   if [ $attacker_gauge -ge 100 ]; then
     echo -e "${MAGENTA}【${attacker}の必殺技ゲージが満タン！】${RESET}"

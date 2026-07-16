@@ -11,7 +11,8 @@ set -euo pipefail
 #
 
 # ===== 設定（定数） =====
-readonly PROG_NAME=$(basename "$0")
+readonly PROG_NAME
+PROG_NAME=$(basename "$0")
 readonly VERSION="2.0"
 
 # 色定義

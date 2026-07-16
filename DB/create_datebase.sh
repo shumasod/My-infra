@@ -41,14 +41,15 @@ EOF
 check_session_count() {
     log_message "INFO: セッション数をチェックします"
     
-    local result=$(sqlplus -S /nolog <<EOF
+    local result
+    result=$(sqlplus -S /nolog <<EOF
 CONNECT / AS SYSDBA
 SET PAGESIZE 0 FEEDBACK OFF VERIFY OFF HEADING OFF ECHO OFF
-SELECT 
+SELECT
     current_utilization || ',' || limit_value
-FROM 
+FROM
     v\$resource_limit
-WHERE 
+WHERE
     resource_name = 'sessions';
 EXIT
 EOF
@@ -59,8 +60,10 @@ EOF
         return 1
     fi
     
-    local current_sessions=$(echo "$result" | cut -d',' -f1 | tr -d ' ')
-    local max_sessions=$(echo "$result" | cut -d',' -f2 | tr -d ' ')
+    local current_sessions
+    current_sessions=$(echo "$result" | cut -d',' -f1 | tr -d ' ')
+    local max_sessions
+    max_sessions=$(echo "$result" | cut -d',' -f2 | tr -d ' ')
     
     if [ -z "$current_sessions" ] || [ -z "$max_sessions" ]; then
         log_message "ERROR: セッション数のパースに失敗しました"
@@ -184,7 +187,8 @@ execute_sql_with_retry() {
         fi
         
         # SQL実行
-        local output=$(sqlplus -S /nolog <<EOF 2>&1
+        local output
+        output=$(sqlplus -S /nolog <<EOF 2>&1
 CONNECT / AS SYSDBA
 SET ECHO ON
 SET SERVEROUTPUT ON

@@ -11,9 +11,9 @@ set -euo pipefail  # エラーハンドリング: エラー時終了、未定義
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 # 定数定義
-readonly SCRIPT_NAME=$(basename "$0")
+readonly SCRIPT_NAME
+SCRIPT_NAME=$(basename "$0")
 readonly LOG_FILE="/tmp/${SCRIPT_NAME%.*}.log"
-readonly CONFIG_FILE="./config.txt"
 
 # ログ関数
 log() {
@@ -107,7 +107,8 @@ check_environment() {
     done
     
     # ディスク容量チェック
-    local available_space=$(df "$WORK_DIR" | awk 'NR==2 {print $4}')
+    local available_space
+    available_space=$(df "$WORK_DIR" | awk 'NR==2 {print $4}')
     if [[ $available_space -lt 1000000 ]]; then  # 1GB未満の場合
         print_color "$YELLOW" "警告: ディスク容量が少なくなっています"
         log "WARN" "ディスク容量: ${available_space}KB"
@@ -127,9 +128,10 @@ process_file() {
     print_color "$BLUE" "ファイル処理中: $file"
     
     # ファイル統計情報
-    local line_count=$(wc -l < "$file")
-    local word_count=$(wc -w < "$file")
-    local char_count=$(wc -c < "$file")
+    local line_count word_count char_count
+    line_count=$(wc -l < "$file")
+    word_count=$(wc -w < "$file")
+    char_count=$(wc -c < "$file")
     
     print_color "$GREEN" "統計情報:"
     echo "  行数: $line_count"
@@ -203,7 +205,8 @@ network_check() {
 # バックアップ作成
 create_backup() {
     local source_dir="$1"
-    local backup_name="backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+    local backup_name
+    backup_name="backup_$(date +%Y%m%d_%H%M%S).tar.gz"
     
     if [[ ! -d "$source_dir" ]]; then
         print_color "$YELLOW" "バックアップ対象ディレクトリが存在しません: $source_dir"
@@ -251,9 +254,9 @@ json_demo() {
 parallel_demo() {
     print_color "$BLUE" "並列処理のデモ:"
     
-    echo "5つのタスクを並列実行中..."
-    
-    for i in {1..5}; do
+    echo "${COUNT}つのタスクを並列実行中..."
+
+    for (( i=1; i<=COUNT; i++ )); do
         (
             sleep $((i * 2))
             echo "タスク $i 完了 ($(date +%H:%M:%S))"

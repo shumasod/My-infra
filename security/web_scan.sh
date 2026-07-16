@@ -17,7 +17,8 @@ set -euo pipefail
 # 共通ライブラリの読み込み
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-readonly PROG_NAME=$(basename "$0")
+readonly PROG_NAME
+PROG_NAME=$(basename "$0")
 readonly VERSION="1.0"
 readonly CURL_TIMEOUT=10
 readonly CURL_OPTS=(-s -m "$CURL_TIMEOUT" --max-redirs 0 -D -)

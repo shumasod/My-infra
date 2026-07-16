@@ -362,20 +362,24 @@ http_client_mode() {
 
     # curlまたはwgetを使用
     if check_command curl 2>/dev/null; then
-        local curl_cmd="curl -s -X ${method} -w '\n\n--- Response Info ---\nHTTP Code: %{http_code}\nTime: %{time_total}s\nSize: %{size_download} bytes\n'"
+        local -a curl_args=(-s -X "$method"
+            -w '\n\n--- Response Info ---\nHTTP Code: %{http_code}\nTime: %{time_total}s\nSize: %{size_download} bytes\n')
 
         if [[ -n "$headers" ]]; then
-            curl_cmd+=" ${headers}"
+            # headers は "-H 'Key: Val' -H 'Key2: Val2'" 形式; eval なしで配列展開
+            while IFS= read -r hline; do
+                [[ -n "$hline" ]] && curl_args+=(-H "$hline")
+            done < <(echo "$headers" | grep -oP "(?<=-H ')[^']+(?=')")
         fi
 
         if [[ -n "$data" ]]; then
-            curl_cmd+=" -d '${data}'"
+            curl_args+=(-d "$data")
         fi
 
-        curl_cmd+=" '${url}'"
+        curl_args+=("$url")
 
         echo -e "${C_GREEN}=== レスポンス ===${C_RESET}"
-        eval "$curl_cmd" 2>/dev/null || log_error "リクエスト失敗"
+        curl "${curl_args[@]}" 2>/dev/null || log_error "リクエスト失敗"
         echo -e "${C_GREEN}==================${C_RESET}"
 
     elif check_command wget 2>/dev/null; then

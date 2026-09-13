@@ -264,8 +264,11 @@ analyze_mysql() {
     # ---- tmp_table_size / max_heap_table_size ----
     current_val=$(mysql_get_var "tmp_table_size")
     current_int="${current_val:-0}"
-    local rec_tmp=$(mb_to_bytes 64)
-    if   (( current_int >= mb_to_bytes 16 && current_int <= mb_to_bytes 256 )); then
+    local rec_tmp bytes_16 bytes_256
+    rec_tmp=$(mb_to_bytes 64)
+    bytes_16=$(mb_to_bytes 16)
+    bytes_256=$(mb_to_bytes 256)
+    if   (( current_int >= bytes_16 && current_int <= bytes_256 )); then
         status="$STATUS_OK"; comment="適切な範囲 (16MB〜256MB)"
     else
         status="$STATUS_WARN"; comment="16MB〜64MB を推奨"
@@ -466,7 +469,9 @@ analyze_postgresql() {
     rec_bytes=$(mb_to_bytes 16)
     current_val=$(pg_get_var "wal_buffers")
     current_bytes=$(pg_to_bytes "$current_val")
-    if   (( current_bytes >= mb_to_bytes 8 )); then
+    local bytes_8
+    bytes_8=$(mb_to_bytes 8)
+    if   (( current_bytes >= bytes_8 )); then
         status="$STATUS_OK";   comment="WAL書き込み効率は十分"
     else
         status="$STATUS_WARN"; comment="16MB を推奨"
